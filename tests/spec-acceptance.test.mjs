@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 
-const page = fs.readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+const page = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const data = fs.readFileSync(new URL("../lib/case-data.ts", import.meta.url), "utf8");
-const feedback = fs.readFileSync(new URL("../app/api/simulation/feedback/route.ts", import.meta.url), "utf8");
-const respond = fs.readFileSync(new URL("../app/api/simulation/respond/route.ts", import.meta.url), "utf8");
+const feedback = fs.readFileSync(new URL("../lib/feedback.ts", import.meta.url), "utf8");
+const respond = fs.readFileSync(new URL("../lib/simulation.ts", import.meta.url), "utf8");
 
 test("student-facing interface uses names, a test file, transitions and printable reports", () => {
   assert.match(page, /תיק הבדיקות/);
@@ -30,7 +30,7 @@ test("case labels are selected from human-facing headers rather than technical I
 test("the three approved pilot cases are listed in the case catalogue, not hard-coded in logic", () => {
   const catalogue = JSON.parse(fs.readFileSync(new URL("../data/cases/index.json", import.meta.url), "utf8"));
   assert.deepEqual(catalogue.cases.map((entry) => entry.id), ["CASE-001", "CASE-002", "CASE-003"]);
-  for (const source of [page, data, respond, fs.readFileSync(new URL("../app/api/session/route.ts", import.meta.url), "utf8")]) assert.doesNotMatch(source, /"CASE-0dd"/);
+  for (const source of [page, data, respond, fs.readFileSync(new URL("../lib/session-store.ts", import.meta.url), "utf8")]) assert.doesNotMatch(source, /"CASE-0dd"/);
   assert.match(page, /מי מחכה לך במיון/);
   assert.match(page, /caseId/);
 });

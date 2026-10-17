@@ -2,6 +2,10 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { availableCases, catalogEntry, type CaseId } from "../lib/case-catalog";
+import { loadCase } from "../lib/case-loader";
+import { generateFeedback } from "../lib/feedback";
+import { loadSession, saveSession } from "../lib/session-store";
+import { runSimulationStep, type SimulationRequest } from "../lib/simulation";
 
 type Stage = "welcome" | "picture" | "anamnesis" | "examination" | "immediateTests" | "rationale1" | "diagnosis" | "followupTests" | "interim" | "results" | "rationale2" | "decision" | "record" | "explanation" | "feedback";
 type Action = { id: string; label: string; area: string };
@@ -102,17 +106,14 @@ export default function Home() {
     if (stage === "welcome") return;
     const snapshot = { caseId, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback, completed: stage === "feedback" };
     const timer = setTimeout(() => {
-      void fetch("/api/session", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, caseId, payload: snapshot }) })
-        .then((response) => { if (!response.ok) throw new Error(); setNotice("ההתקדמות נשמרה."); })
-        .catch(() => setNotice("השמירה אינה זמינה כרגע."));
+      try { saveSession(code, snapshot); setNotice("ההתקדמות נשמרה בדפדפן הזה."); }
+      catch { setNotice("השמירה אינה זמינה כרגע."); }
     }, 900);
     return () => clearTimeout(timer);
   }, [code, caseId, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback]);
   async function restoreSession() {
     try {
-      const response = await fetch(`/api/session?code=${encodeURIComponent(restore)}`); const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      const saved = data.session;
+      const saved = loadSession(restore) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
       if (saved.caseId && availableCases.some((item) => item.id === saved.caseId)) setCaseId(saved.caseId as CaseId);
       setStage(saved.stage); setMessages(saved.messages || []); setActions(saved.actions || []); setResults(saved.results || []); setRationale1(saved.rationale1 || []); setRationale2(saved.rationale2 || []); setForm(saved.form || {}); setTranscript(saved.transcript || ""); setFeedback(saved.feedback || null);
       setNotice("הסימולציה שוחזרה.");
@@ -126,21 +127,22 @@ export default function Home() {
   function goBack() { if (["anamnesis", "examination", "immediateTests"].includes(stage) && index > 2) setStage(stages[index - 1].id); }
   function storeActions(items: Action[]) { setActions((old) => [...old, ...items.filter((item) => !old.some((existing) => existing.id === item.id && existing.area === item.area))]); }
 
+  async function step(request: SimulationRequest) {
+    return runSimulationStep({ config: { apiKey: key }, entry: catalogEntry(caseId), caseFile: await loadCase(caseId) }, request);
+  }
   async function ask(event: FormEvent) {
     event.preventDefault(); if (!question.trim() || !key) return;
     const text = question.trim(); setQuestion(""); setBusy(true); setError("");
     try {
       const phase = phaseFor(stage);
       if (stage === "immediateTests" || stage === "followupTests") {
-        const response = await fetch("/api/simulation/respond", { method: "POST", headers: { "Content-Type": "application/json", "X-Pilot-OpenAI-Key": key }, body: JSON.stringify({ caseId, phase, question: text, mode: "recognize" }) });
-        const data = await response.json(); if (!response.ok) throw new Error(data.error);
+        const data = await step({ phase, question: text, mode: "recognize" });
         const found = (data.recognized || []).map((item: { id: string; label: string }) => ({ ...item, area: areaFor(stage) }));
         setPending(found); setSelected(found.map((item: Action) => item.id));
       } else {
         setMessages((old) => [...old, { role: "הרופא", text }]);
-        const response = await fetch("/api/simulation/respond", { method: "POST", headers: { "Content-Type": "application/json", "X-Pilot-OpenAI-Key": key }, body: JSON.stringify({ caseId, phase, question: text }) });
-        const data = await response.json(); if (!response.ok) throw new Error(data.error);
-        setMessages((old) => [...old, { role: stage === "anamnesis" ? "המטופל" : "המערכת", text: data.answer }]);
+        const data = await step({ phase, question: text });
+        setMessages((old) => [...old, { role: stage === "anamnesis" ? "המטופל" : "המערכת", text: data.answer ?? "" }]);
         storeActions((data.matchedActions || []).map((item: { id: string; label: string }) => ({ ...item, area: areaFor(stage) })));
       }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "לא התקבלה תשובה."); }
@@ -149,8 +151,7 @@ export default function Home() {
   async function executeTests() {
     if (!pending) return; setBusy(true); setError("");
     try {
-      const response = await fetch("/api/simulation/respond", { method: "POST", headers: { "Content-Type": "application/json", "X-Pilot-OpenAI-Key": key }, body: JSON.stringify({ caseId, phase: phaseFor(stage), question: "בצע את הבדיקות שאושרו", mode: "execute", selectedIds: selected }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error);
+      const data = await step({ phase: phaseFor(stage), question: "בצע את הבדיקות שאושרו", mode: "execute", selectedIds: selected });
       const approved = pending.filter((item) => selected.includes(item.id));
       storeActions(approved);
       setResults((old) => [...old, ...(data.results || []).map((item: { id: string; label: string; answer: string }) => ({ ...item, area: areaFor(stage) }))]);
@@ -182,9 +183,7 @@ export default function Home() {
     if (!key) { setError("יש להכניס מפתח API כדי להפיק משוב."); return false; }
     setBusy(true); setError(""); setPrintRequested(printAfter);
     try {
-      const response = await fetch("/api/simulation/feedback", { method: "POST", headers: { "Content-Type": "application/json", "X-Pilot-OpenAI-Key": key }, body: JSON.stringify({ caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      setFeedback(data.feedback);
+      setFeedback(await generateFeedback({ apiKey: key }, await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
       return true;
     } catch (caught) { setPrintRequested(false); setError(caught instanceof Error ? caught.message : "לא ניתן להפיק משוב."); }
     finally { setBusy(false); }

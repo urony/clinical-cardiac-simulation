@@ -34,7 +34,7 @@ test("every provider has the required fields, an https URL and a model for each 
     assert.match(provider.baseUrl, /^https:\/\/[^/]+/);
     assert.ok(!provider.baseUrl.endsWith("/"), "base URL must not end with a slash");
     assert.ok(["json_schema", "json_object"].includes(provider.structuredOutput));
-    assert.ok(["in-use", "untested"].includes(provider.status));
+    assert.ok(["in-use", "tested", "untested"].includes(provider.status));
     for (const role of ["classifier", "response", "feedback"]) assert.ok(provider.defaultModels[role], `${provider.id}.${role}`);
   }
   assert.ok(getProvider("openai") && getProvider("groq") && !getProvider("nope"));

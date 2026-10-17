@@ -1,4 +1,4 @@
-import { extractOpenAIError, extractOpenAIText, type OpenAIResponsesPayload } from "./openai-response";
+import { extractOpenAIText, type OpenAIResponsesPayload } from "./openai-response";
 import { getProvider, type ModelRole, type ProviderSpec } from "./providers";
 
 /**
@@ -31,7 +31,7 @@ export type CompletionRequest = {
   json?: { name: string; schema: Record<string, unknown> };
 };
 
-export type ErrorKind = "config" | "network" | "timeout" | "auth" | "quota" | "rate_limit" | "model" | "provider" | "bad_response" | "invalid_request" | "teacher_limit" | "truncated";
+export type ErrorKind = "config" | "network" | "timeout" | "auth" | "quota" | "rate_limit" | "model" | "provider" | "bad_response" | "invalid_request" | "teacher_limit" | "truncated" | "daily_quota";
 
 /**
  * An error whose `message` is Hebrew, safe and meaningful to show to a student. `detail` is the
@@ -50,6 +50,7 @@ export const failureMessages: Record<Exclude<ErrorKind, "config" | "invalid_requ
   timeout: "ספק ה־AI לא ענה בזמן. נסו שוב בעוד רגע.",
   auth: "הספק דחה את המפתח של המורה (שגוי, בוטל או ללא הרשאה). הסימולציה לא יכולה להמשיך. פנו למורה.",
   quota: "המכסה או היתרה של המורה אצל ספק ה־AI נגמרו או שהוגבלו. הסימולציה לא יכולה להמשיך כרגע. המתינו דקה ונסו שוב, ואם זה חוזר פנו למורה.",
+  daily_quota: "המכסה היומית של המורה אצל ספק ה־AI נגמרה. הסימולציה לא יכולה להמשיך היום. נסו שוב מחר או פנו למורה.",
   rate_limit: "הספק מגביל כרגע את מספר הפניות. המתינו כמה שניות ונסו שוב.",
   model: "המודל שהמורה בחר אינו זמין עם המפתח הזה. הסימולציה לא יכולה להמשיך. פנו למורה.",
   provider: "שירות ה־AI של הספק אינו זמין כרגע. נסו שוב בעוד רגע.",
@@ -68,7 +69,7 @@ export function buildResponsesBody(provider: ProviderSpec, model: string, reques
     ...(provider.supportsReasoningEffort ? { reasoning: { effort: "low" } } : {}),
     max_output_tokens: request.maxOutputTokens + (provider.outputTokenHeadroom ?? 0),
     input: [
-      { role: "developer", content: [{ type: "input_text", text: request.system }] },
+      { role: provider.systemRole ?? "developer", content: [{ type: "input_text", text: request.system }] },
       { role: "user", content: [{ type: "input_text", text: request.user }] },
     ],
     ...(request.json ? { text: { format: { type: "json_schema", name: request.json.name, strict: true, schema: request.json.schema } } } : {}),
@@ -127,9 +128,24 @@ function extractChatText(payload: ChatPayload): string | null {
 
 function classify(status: number, message: string): ErrorKind {
   if (status === 401 || status === 403) return "auth";
-  if (status === 429) return /credit|quota|billing|insufficient|exhausted/i.test(message) ? "quota" : "rate_limit";
+  if (status === 429) {
+    // A daily limit will not clear within a minute, so the student is told to come back tomorrow.
+    if (/per ?day|daily|\bTPD\b|\bRPD\b/i.test(message)) return "daily_quota";
+    return /credit|quota|billing|insufficient|exhausted/i.test(message) ? "quota" : "rate_limit";
+  }
   if (status === 404 || (status === 400 && /model/i.test(message))) return "model";
   return "provider";
+}
+
+/** The provider's own error text. Providers differ: {error:{message}}, {error:"text"}, {message}, {detail}, {code}. */
+export function errorText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const error = record.error;
+  if (typeof error === "string" && error.trim()) return error.trim().slice(0, 300);
+  if (error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") return ((error as { message: string }).message).trim().slice(0, 300);
+  for (const key of ["message", "detail", "code"]) if (typeof record[key] === "string" && (record[key] as string).trim()) return (record[key] as string).trim().slice(0, 300);
+  return null;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -179,7 +195,7 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
   // A structured (JSON) answer that was cut off is unusable even though some text arrived.
   const cutOffJson = Boolean(output) && reply.truncated && Boolean(request.json);
   if (!response.ok || !output || cutOffJson) {
-    const providerMessage = responses ? extractOpenAIError(payload) : typeof payload.error?.message === "string" ? payload.error.message : null;
+    const providerMessage = errorText(payload);
     const detail = providerMessage || `לא התקבלה תשובה קריאה${reply.text ? ` (${reply.text})` : ""}`;
     const kind: ErrorKind = response.ok ? (reply.truncated ? "truncated" : "bad_response") : classify(response.status, detail);
     throw new SimulationError(failureMessages[kind as keyof typeof failureMessages] ?? failureMessages.provider, 502, kind, `${provider.name} (${response.status}): ${detail}`);
@@ -187,13 +203,25 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
   return output;
 }
 
-/** Sends one very short request so a teacher can check that the provider, model and key work. */
+/**
+ * Sends one very short request per DISTINCT model the class will use (question recognition, patient
+ * answers, feedback), so a wrong model name for any role is caught before students start.
+ */
 export async function testConnection(config: ModelConfig): Promise<void> {
-  try {
-    await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 256 });
-  } catch (error) {
-    // The teacher sees the provider's own wording as well, to tell a wrong key from a missing model.
-    if (error instanceof SimulationError && error.detail) throw new SimulationError(`${error.message} (פרטי הספק: ${error.detail})`, error.status, error.kind, error.detail);
-    throw error;
+  const provider = getProvider(config.providerId);
+  const roles: ModelRole[] = ["classifier", "response", "feedback"];
+  const checks: { role: ModelRole; model: string }[] = [];
+  for (const role of roles) {
+    const model = provider ? resolveModel(config, provider, role) : role;
+    if (!checks.some((check) => check.model === model)) checks.push({ role, model });
+  }
+  for (const { role, model } of checks) {
+    try {
+      await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role, system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 256 });
+    } catch (error) {
+      // The teacher sees the provider's own wording as well, to tell a wrong key from a missing model.
+      if (error instanceof SimulationError && error.detail) throw new SimulationError(`${error.message} (המודל שנבדק: ${model}. פרטי הספק: ${error.detail})`, error.status, error.kind, error.detail);
+      throw error;
+    }
   }
 }

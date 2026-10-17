@@ -13,7 +13,7 @@
 
 1. **לפרסם את הסימולטור** (למשל GitHub Pages) ולקבל כתובת https אמיתית.
 2. **למלא `officialUrl`** בכתובת הסימולטור עם `#/setup` (האשף מציג לפיה את הכפתור "חזרה לכלי"). כתובת צפויה, שלא אומתה: `https://urony.github.io/clinical-cardiac-simulation/#/setup`.
-3. **להחליט על `supportedProviders`:** ברשומה המוצעת רק `openai`, כי זה המסלול היחיד שהיה בשימוש בפועל. ספקים אחרים (Gemini, Groq, OpenRouter, Mistral, xAI) מוגדרים בסימולטור אך לא נבדקו מול שירות אמיתי. אחרי בדיקה חיה אפשר להוסיף אותם ולמלא `compatibilityVerified` בתאריך הבדיקה.
+3. **`supportedProviders`:** ברשומה המוצעת `openai` ו-`gemini`. Gemini נבדק בסימולציה מלאה במסלול החינמי ב-17.10.2026, ו-OpenAI היה בשימוש לפני כן. Groq עבד בבדיקת חיבור אך המכסה החינמית שלו נגמרה מהר, ו-xAI, OpenRouter ו-Mistral לא נבדקו, ולכן אינם ברשימה. כשיבדקו, אפשר להוסיף אותם ולעדכן את `compatibilityVerified`.
 4. להריץ באשף `npm run validate` ו-`npm test`.
 
 ## נקודה שדורשת החלטה

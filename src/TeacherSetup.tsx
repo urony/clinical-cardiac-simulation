@@ -2,18 +2,24 @@ import { useState } from "react";
 import { testConnection } from "../lib/ai-client";
 import { buildClassLink, newClassId, validateConfig, type ClassConfig } from "../lib/class-link";
 import { wizardLink } from "../lib/links";
-import { DEFAULT_PROVIDER_ID, getProvider, providers, type ModelRole } from "../lib/providers";
+import { getProvider, keyFormatWarning, providerLabel, providersForTeachers, type ModelRole } from "../lib/providers";
 
-const roleLabels: Record<ModelRole, string> = { classifier: "זיהוי השאלה", response: "תשובת המטופל", feedback: "משוב" };
+const roles: { role: ModelRole; label: string; explanation: string }[] = [
+  { role: "classifier", label: "זיהוי השאלה", explanation: "מבין לאיזה פרטים בתיק המקרה מתייחסת שאלת התלמיד. נקרא בכל שאלה." },
+  { role: "response", label: "תשובת המטופל", explanation: "מנסח את תשובת המטופל מתוך הפרטים שנבחרו. נקרא בכל שאלה." },
+  { role: "feedback", label: "משוב", explanation: "כותב את המשוב לתלמיד בסוף הסימולציה." },
+];
 const DAY = 24 * 60 * 60 * 1000;
 const expiryOptions = [{ days: 7, label: "שבוע" }, { days: 14, label: "שבועיים" }, { days: 30, label: "חודש" }, { days: 90, label: "3 חודשים" }, { days: 0, label: "ללא תפוגה" }];
+const sortedProviders = providersForTeachers();
 
 export default function TeacherSetup() {
-  const [providerId, setProviderId] = useState(DEFAULT_PROVIDER_ID);
+  const [providerId, setProviderId] = useState(sortedProviders[0].id);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [className, setClassName] = useState("");
-  const [models, setModels] = useState<Partial<Record<ModelRole, string>>>({});
+  const [model, setModel] = useState("");
+  const [roleModels, setRoleModels] = useState<Partial<Record<ModelRole, string>>>({});
   const [maxCalls, setMaxCalls] = useState("200");
   const [maxPerMinute, setMaxPerMinute] = useState("20");
   const [maxTokens, setMaxTokens] = useState("");
@@ -25,11 +31,18 @@ export default function TeacherSetup() {
   const [busy, setBusy] = useState(false);
   const provider = getProvider(providerId)!;
   const wizardHref = wizardLink();
+  const keyWarning = keyFormatWarning(provider, apiKey);
+
+  /** One model for everything unless the teacher chose a different one for a specific part. */
+  function chosenModels(): Partial<Record<ModelRole, string>> {
+    const entries = roles.map(({ role }) => [role, (roleModels[role] ?? "").trim() || model.trim()] as const).filter(([, value]) => value);
+    return Object.fromEntries(entries);
+  }
 
   function buildConfig(): ClassConfig {
     return {
       version: 1, classId: newClassId(), providerId, apiKey: apiKey.trim(),
-      models: Object.fromEntries(Object.entries(models).filter(([, value]) => value?.trim()).map(([role, value]) => [role, value!.trim()])),
+      models: chosenModels(),
       className: className.trim() || undefined,
       expiresAt: expiryDays ? Date.now() + expiryDays * DAY : undefined,
       maxCalls: maxCalls.trim() ? Number(maxCalls) : undefined,
@@ -49,8 +62,8 @@ export default function TeacherSetup() {
   async function check() {
     setError(""); setStatus(""); setBusy(true);
     try {
-      await testConnection({ providerId, apiKey: apiKey.trim(), models });
-      setStatus("החיבור עובד: הספק, המודל והמפתח אושרו.");
+      await testConnection({ providerId, apiKey: apiKey.trim(), models: chosenModels() });
+      setStatus("החיבור עובד: הספק, המפתח וכל המודלים שנבחרו אושרו.");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "בדיקת החיבור נכשלה."); }
     finally { setBusy(false); }
   }
@@ -64,7 +77,7 @@ export default function TeacherSetup() {
     <header className="topbar"><div><p className="eyebrow">למורים</p><h1>הקמת כיתה</h1></div><a className="back" href="#">לסימולטור</a></header>
     <div className="panel">
       <p>הזינו מפתח API של ספק בינה מלאכותית, ותקבלו קישור לשליחה לתלמידים. התלמידים לא יצטרכו להזין או לראות מפתח בממשק. המפתח נשמר רק בקישור, לא בשרת שלנו.</p>
-      {wizardHref && <p className="help-link">אין לכם מפתח API? <a href={wizardHref} target="_blank" rel="noopener noreferrer">אשף ההשגה צעד־אחר־צעד (נפתח בלשונית חדשה)</a>. אחרי שתקבלו מפתח, חזרו לכאן והדביקו אותו.</p>}
+      {wizardHref && <p className="help-link">אין לכם מפתח API? <a className="text-link" href={wizardHref} target="_blank" rel="noopener noreferrer">אשף ההשגה צעד־אחר־צעד (נפתח בלשונית חדשה)</a>. אחרי שתקבלו מפתח, חזרו לכאן והדביקו אותו.</p>}
       <div className="notice-box">
         <b>לפני שיוצרים קישור: חשוב לדעת</b>
         <ul>
@@ -77,27 +90,38 @@ export default function TeacherSetup() {
       </div>
 
       <label className="field">שם הכיתה (לא חובה)
-        <input value={className} maxLength={60} onChange={(event) => setClassName(event.target.value)} placeholder="למשל: י׳ 2 ביולוגיה"/>
+        <input name="class-label" value={className} maxLength={60} onChange={(event) => setClassName(event.target.value)} placeholder="למשל: י׳ 2 ביולוגיה" autoComplete="off"/>
       </label>
 
       <label className="field">ספק בינה מלאכותית
-        <select value={providerId} onChange={(event) => { setProviderId(event.target.value); setModels({}); setLink(""); }}>
-          {providers.map((item) => <option key={item.id} value={item.id}>{item.name}{item.status === "untested" ? " (לא נבדק)" : ""}</option>)}
+        <select value={providerId} onChange={(event) => { setProviderId(event.target.value); setModel(""); setRoleModels({}); setLink(""); }}>
+          {sortedProviders.map((item) => <option key={item.id} value={item.id}>{providerLabel(item)}</option>)}
         </select>
       </label>
       {provider.status === "untested" && <p className="warn">ספק זה הוגדר לפי התיעוד, אך עדיין לא נבדק מול השירות האמיתי. השתמשו ב״בדוק חיבור״ ובצעו ניסיון לפני שליחה לתלמידים.</p>}
+      {provider.lowFreeQuota && <p className="warn">המכסה החינמית של ספק זה נגמרה מהר בניסוי. לכיתה שלמה כדאי לשקול ספק אחר או מסלול בתשלום.</p>}
       {provider.notes && <p className="muted">{provider.notes}</p>}
 
       <label className="field">מפתח API
-        <span className="row"><input type={showKey ? "text" : "password"} value={apiKey} onChange={(event) => { setApiKey(event.target.value); setLink(""); }} autoComplete="off" spellCheck={false} dir="ltr"/><button type="button" className="back" onClick={() => setShowKey(!showKey)}>{showKey ? "הסתר" : "הצג"}</button></span>
+        <span className="row">
+          {/* A text field drawn as dots: browsers treat password fields as logins and offer saved passwords. */}
+          <input className={showKey ? "" : "secret-input"} type="text" name="class-secret-value" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setLink(""); }}
+            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} dir="ltr" data-lpignore="true" data-1p-ignore="true" data-form-type="other"/>
+          <button type="button" className="back" onClick={() => setShowKey(!showKey)}>{showKey ? "הסתר" : "הצג"}</button>
+        </span>
       </label>
+      {keyWarning && <p className="warn" role="alert">{keyWarning}</p>}
 
-      <fieldset className="models"><legend>מודלים (ברירת המחדל מומלצת ואפשר לשנות)</legend>
-        {(Object.keys(roleLabels) as ModelRole[]).map((role) => <label className="field" key={role}>{roleLabels[role]}
-          <input value={models[role] ?? ""} onChange={(event) => setModels({ ...models, [role]: event.target.value })} placeholder={provider.defaultModels[role]} dir="ltr"/>
+      <label className="field">מודל (לא חובה)
+        <input name="class-model" value={model} onChange={(event) => setModel(event.target.value)} placeholder={provider.defaultModels.response} dir="ltr" autoComplete="off"/>
+      </label>
+      <p className="muted">ריק = המודלים המומלצים של הספק. אם תכתבו שם מודל, הוא ישמש לכל חלקי הסימולציה. רשימת המודלים אינה בדיקה פדגוגית או קלינית, ומפתח במסלול חינמי עשוי לעבוד רק עם מודלים מסוימים.</p>
+      <details className="models"><summary>מתקדם: מודל נפרד לכל חלק בסימולציה</summary>
+        {roles.map(({ role, label, explanation }) => <label className="field" key={role}>{label}
+          <span className="muted">{explanation}</span>
+          <input name={`class-model-${role}`} value={roleModels[role] ?? ""} onChange={(event) => setRoleModels({ ...roleModels, [role]: event.target.value })} placeholder={model.trim() || provider.defaultModels[role]} dir="ltr" autoComplete="off"/>
         </label>)}
-        <p className="muted">רשימת המודלים אינה בדיקה פדגוגית או קלינית. מפתח במסלול חינמי עשוי לעבוד רק עם מודלים מסוימים.</p>
-      </fieldset>
+      </details>
 
       <fieldset className="models"><legend>הגבלות (רכות)</legend>
         <label className="field">מספר פניות AI מרבי לכל תלמיד (שאלה אחת בדרך כלל דורשת 2 פניות; ריק = ללא הגבלה)

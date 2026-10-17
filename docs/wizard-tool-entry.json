@@ -4,9 +4,15 @@
   "owner": "אורי",
   "description": "סימולטור קליני לתלמידי מדעי הבריאות. המורה מקים כיתה במפתח API שלו, ושולח לתלמידים קישור כיתה.",
   "officialUrl": null,
-  "supportedProviders": ["openai"],
-  "protocols": ["openai-responses"],
+  "supportedProviders": [
+    "openai",
+    "gemini"
+  ],
+  "protocols": [
+    "openai-responses",
+    "openai-chat-completions"
+  ],
   "restrictedModels": [],
   "pasteInstructions": "פתחו את הסימולטור בעמוד \"הקמת כיתה\" (הכתובת של האתר עם #/setup), הדביקו את המפתח בשדה \"מפתח API\", בחרו ספק ומודל ולחצו \"צור קישור כיתה\". את הקישור (ולא את המפתח עצמו) שולחים לתלמידים. שימו לב: המפתח כלול בקישור, ולכן השתמשו במפתח נפרד לסימולטור עם מכסה מוגבלת או במפתח חינמי.",
-  "compatibilityVerified": null
+  "compatibilityVerified": "2026-10-17"
 }

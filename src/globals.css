@@ -19,3 +19,15 @@
 .class-notice{background:#eef6fa;border-inline-start:5px solid #176b87;border-radius:8px;padding:10px 14px;margin:10px 0}
 .slow-notice{background:#fff4dc;border-radius:8px;padding:8px 12px;margin:8px 0}
 .help-link{background:#eef6fa;border-radius:8px;padding:10px 14px;margin:0}.teacher-link{display:inline-block;margin-top:6px;font-size:.9em}
+
+.text-link,.teacher-link{color:#0b5cad;text-decoration:underline;cursor:pointer}
+.text-link:hover,.teacher-link:hover{color:#08407a}
+.secret-input{-webkit-text-security:disc;text-security:disc}
+.home-button{display:inline-block;margin:8px 0 0;padding:6px 12px;border:1px solid #176b87;border-radius:8px;background:#fff;color:#176b87;font:inherit;cursor:pointer}
+.home-button:hover{background:#eef6fa}
+.case-status{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;background:#e8f1fa;color:#08407a;font-style:normal;font-size:.85em}
+.resume-box{background:#eef6fa;border-radius:10px;padding:12px 16px;margin-top:12px}
+.resume-box .actions{display:flex;gap:10px;flex-wrap:wrap}
+.setup details.models{border:1px solid #cfd8de;border-radius:10px;padding:10px 12px}
+.setup details.models summary{cursor:pointer;font-weight:600}
+.setup details.models .field{margin-top:12px}

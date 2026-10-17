@@ -118,7 +118,7 @@ test("feedback still falls back to plain text when the structured reply is unusa
   const caseFile = readCaseFile(availableCases[0].file);
   const calls = script({ status: 200, payload: { output_text: "not json at all" } }, { status: 200, payload: { output_text: "חוזקות:\n- טוב\nלשיפור:\n- לשפר" } });
   const feedback = await generateFeedback(config, caseFile, { caseId: "CASE-001" });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3, "two structured attempts, then the short version");
   assert.ok(feedback["משוב פרופ׳ שחף"]);
 });
 

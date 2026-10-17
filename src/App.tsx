@@ -7,7 +7,8 @@ import { generateFeedback } from "../lib/feedback";
 import type { ModelConfig } from "../lib/ai-client";
 import { callsUsed, createCallBudget, type ClassConfig } from "../lib/class-link";
 import { DEFAULT_PROVIDER_ID, getProvider } from "../lib/providers";
-import { loadSession, saveSession } from "../lib/session-store";
+import { FOLLOWUP_WAIT_MESSAGE, releasedResults } from "../lib/release";
+import { deleteSession, listSessions, loadSession, saveSession, type SessionSummary } from "../lib/session-store";
 import { runSimulationStep, type SimulationRequest } from "../lib/simulation";
 
 type Stage = "welcome" | "picture" | "anamnesis" | "examination" | "immediateTests" | "rationale1" | "diagnosis" | "followupTests" | "interim" | "results" | "rationale2" | "decision" | "record" | "explanation" | "feedback";
@@ -114,13 +115,40 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
     }, 900);
     return () => clearTimeout(timer);
   }, [code, caseId, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback]);
-  async function restoreSession() {
+  /** Puts a saved session on screen exactly where the student stopped. */
+  function applySession(saved: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (saved.caseId && availableCases.some((item) => item.id === saved.caseId)) setCaseId(saved.caseId as CaseId);
+    setStage(saved.stage); setMessages(saved.messages || []); setActions(saved.actions || []); setResults(saved.results || []); setRationale1(saved.rationale1 || []); setRationale2(saved.rationale2 || []); setForm(saved.form || {}); setTranscript(saved.transcript || ""); setFeedback(saved.feedback || null);
+    setPending(null); setSelected([]); setQuestion(""); setError(""); setStageNotice("");
+  }
+  function restoreSession() {
     try {
-      const saved = loadSession(restore) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-      if (saved.caseId && availableCases.some((item) => item.id === saved.caseId)) setCaseId(saved.caseId as CaseId);
-      setStage(saved.stage); setMessages(saved.messages || []); setActions(saved.actions || []); setResults(saved.results || []); setRationale1(saved.rationale1 || []); setRationale2(saved.rationale2 || []); setForm(saved.form || {}); setTranscript(saved.transcript || ""); setFeedback(saved.feedback || null);
+      applySession(loadSession(restore));
+      setCode(restore); // keep working under the code that was restored
       setNotice("הסימולציה שוחזרה.");
     } catch (caught) { setNotice(caught instanceof Error ? caught.message : "לא ניתן לשחזר את הסימולציה."); }
+  }
+  function clearCaseState() {
+    setMessages([]); setActions([]); setResults([]); setPending(null); setSelected([]); setRationale1([]); setRationale2([]); setForm({}); setTranscript(""); setFeedback(null); setError(""); setNotice(""); setQuestion("");
+  }
+  /** Leaves the patient for the opening screen. Progress is saved first, so the patient can be resumed later. */
+  function goHome() {
+    if (stage !== "welcome") {
+      try { saveSession(code, { caseId, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback, completed: stage === "feedback" }); } catch { /* the notice below still says where to find the work */ }
+    }
+    clearCaseState();
+    setStage("welcome"); setStageNotice("");
+    setNotice("ההתקדמות נשמרה. אפשר לחזור למטופל מהמסך הזה, או לגשת למטופל אחר.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function continueCase(id: CaseId) {
+    try { applySession(loadSession(code, id)); setNotice("המשכת מהמקום שעצרת."); }
+    catch (caught) { setNotice(caught instanceof Error ? caught.message : "לא ניתן להמשיך."); }
+  }
+  function restartCase(id: CaseId) {
+    if (!window.confirm("להתחיל מחדש עם המטופל הזה? העבודה השמורה עליו תימחק.")) return;
+    deleteSession(code, id);
+    setCaseId(id); clearCaseState();
   }
   function transition(to: Stage) {
     setStage(to);
@@ -173,7 +201,7 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
       const approved = pending.filter((item) => selected.includes(item.id));
       storeActions(approved);
       setResults((old) => [...old, ...(data.results || []).map((item: { id: string; label: string; answer: string }) => ({ ...item, area: areaFor(stage) }))]);
-      setMessages((old) => [...old, { role: "המערכת", text: stage === "immediateTests" ? "התוצאות מוצגות כעת בתיק הבדיקות." : "הבקשות אושרו. התוצאות יופיעו לאחר פעולת הביניים." }]);
+      setMessages((old) => [...old, { role: "המערכת", text: stage === "immediateTests" ? "התוצאות מוצגות כעת בתיק הבדיקות." : FOLLOWUP_WAIT_MESSAGE }]);
       setPending(null);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "לא ניתן להציג תוצאות."); }
     finally { setBusy(false); }
@@ -192,7 +220,11 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
     const values = picked.map((action) => ({ action, answer: "" }));
     if (first) setRationale1(values); else setRationale2(values);
   }
-  const testSummary = results.map((item) => `${item.label}: ${item.answer.replace(/; /g, " | ")}`).join("\n");
+  // Follow-up results exist from the moment the tests are approved, but are shown only from stage 10.
+  const followupReleased = index >= stages.findIndex((item) => item.id === "results");
+  const shownResults = releasedResults(results, followupReleased);
+  const sessions: SessionSummary[] = stage === "welcome" ? listSessions(code) : [];
+  const testSummary = shownResults.map((item) => `${item.label}: ${item.answer.replace(/; /g, " | ")}`).join("\n");
   const recordDefaults = {
     "פרטים כלליים": `${meta.initials}, ${meta.sex}, בן/בת ${meta.age}.`,
     "בדיקות ותוצאות": testSummary || "לא תועדו עדיין בדיקות שאושרו.",
@@ -201,7 +233,7 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
     if (!key) { setError("יש להכניס מפתח API כדי להפיק משוב."); return false; }
     setBusy(true); setError(""); setPrintRequested(printAfter);
     try {
-      setFeedback(await generateFeedback(modelConfig(), await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
+      setFeedback(await generateFeedback(modelConfig(), await loadCase(caseId), { caseId, stage, actions, results: shownResults, rationale1, rationale2, form, transcript, reportType }));
       return true;
     } catch (caught) { setPrintRequested(false); setError(caught instanceof Error ? caught.message : "לא ניתן להפיק משוב."); }
     finally { setBusy(false); }
@@ -241,14 +273,14 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
   const visibleResults = stage === "immediateTests" ? results.filter((item) => item.area === "בדיקות בסיסיות") : stage === "results" ? results.filter((item) => item.area === "בדיקות המשך") : [];
 
   return <main className="clinic-shell">
-    <header className="topbar"><div><p className="eyebrow">סימולציה קלינית לימודית · {meta.id}</p><h1>המרפאה הקרדיולוגית הווירטואלית</h1>{!classConfig && <a className="teacher-link" href="#/setup">למורים: הקמת כיתה</a>}</div><div className="case-chip"><span>קוד תלמיד</span><strong>{code}</strong><small>לשחזור עד 14 יום</small><div className="restore"><input value={restore} onChange={(event) => setRestore(event.target.value.toUpperCase())} placeholder="SIM-XXXXXX"/><button onClick={restoreSession}>שחזור</button></div></div></header>
+    <header className="topbar"><div><p className="eyebrow">סימולציה קלינית לימודית · {meta.id}</p><h1>המרפאה הקרדיולוגית הווירטואלית</h1>{!classConfig && <a className="teacher-link" href="#/setup">למורים: הקמת כיתה</a>}{stage !== "welcome" && <button type="button" className="home-button" onClick={goHome}>← חזרה למסך הפתיחה (ההתקדמות נשמרת)</button>}</div><div className="case-chip"><span>קוד תלמיד</span><strong>{code}</strong><small>לשחזור עד 14 יום</small><div className="restore"><input value={restore} onChange={(event) => setRestore(event.target.value.toUpperCase())} placeholder="SIM-XXXXXX"/><button onClick={restoreSession}>שחזור</button></div></div></header>
     {classConfig && <ClassNotice config={classConfig}/>}{stageNotice && <p className="stage-status">{stageNotice}</p>}{notice && <p className="save-status">{notice}</p>}
     <nav className="progress">{stages.map((item, pos) => <span key={item.id} className={pos === index ? "active" : pos < index ? "done" : ""}>{pos + 1}. {item.title}</span>)}</nav>
-    <div className="workspace"><aside className="patient-card"><div className="avatar">{meta.initials.slice(0, 1)}</div><p className="card-label">פניית המטופל · {meta.id}</p><h2>{meta.initials}</h2><p>{availableCases.find((item) => item.id === caseId)?.demographics}</p><p><b>תלונה מרכזית:</b> {availableCases.find((item) => item.id === caseId)?.chiefComplaint}</p><div className="rule"/><TestFile results={results}/>{stage !== "feedback" && <button className="finish" onClick={printInterimReport}>הדפס / שמור דוח PDF ביניים</button>}</aside>
+    <div className="workspace"><aside className="patient-card"><div className="avatar">{meta.initials.slice(0, 1)}</div><p className="card-label">פניית המטופל · {meta.id}</p><h2>{meta.initials}</h2><p>{availableCases.find((item) => item.id === caseId)?.demographics}</p><p><b>תלונה מרכזית:</b> {availableCases.find((item) => item.id === caseId)?.chiefComplaint}</p><div className="rule"/><TestFile results={shownResults}/>{stage !== "feedback" && <button className="finish" onClick={printInterimReport}>הדפס / שמור דוח PDF ביניים</button>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><p className="card-label">שלב {index + 1} מתוך {stages.length}</p><h2>{current.title}</h2></div>{["anamnesis", "examination", "immediateTests"].includes(stage) && index > 2 && <button className="back" onClick={goBack}>חזרה לשלב הקודם</button>}</div>
         {!key && stage !== "welcome" && <div className="pilot-key"><strong>חיבור AI</strong><p>הדבק את מפתח ה־API כדי להפעיל את הסימולציה. המפתח אינו מוצג בדוח ואינו נשמר בקוד.</p><input type="password" value={key} onChange={(event) => setKey(event.target.value.trim())} placeholder="sk-proj-…"/></div>}
         {busy && <SlowNotice/>}{introductions[stage] && <div className="stage-intro">{introductions[stage]}</div>}
-        {stage === "welcome" && <Welcome caseId={caseId} chooseCase={chooseCase} next={() => transition("picture")}/>} {stage === "picture" && <Picture demographics={availableCases.find((item) => item.id === caseId)?.demographics || ""} chiefComplaint={availableCases.find((item) => item.id === caseId)?.chiefComplaint || ""} next={() => transition("anamnesis")}/>} 
+        {stage === "welcome" && <Welcome caseId={caseId} chooseCase={chooseCase} next={() => transition("picture")} sessions={sessions} onContinue={continueCase} onRestart={restartCase}/>} {stage === "picture" && <Picture demographics={availableCases.find((item) => item.id === caseId)?.demographics || ""} chiefComplaint={availableCases.find((item) => item.id === caseId)?.chiefComplaint || ""} next={() => transition("anamnesis")}/>} 
         {(["anamnesis", "examination"] as Stage[]).includes(stage) && <><Chat messages={messages}/><Ask question={question} setQuestion={setQuestion} label={stage === "anamnesis" ? "מה תרצה לשאול את המטופל?" : "איזו בדיקה גופנית תרצה לבצע?"} ask={ask} busy={busy} disabled={!key} error={error}/><button className="finish stage-finish" onClick={() => transition(stages[index + 1].id)}>סיימתי שלב זה</button></>}
         {(["immediateTests", "followupTests"] as Stage[]).includes(stage) && <><Chat messages={messages}/><Ask question={question} setQuestion={setQuestion} label="איזו בדיקה תרצה לבקש?" ask={ask} busy={busy} disabled={!key} error={error}/>{pending && <ConfirmTests items={pending} selected={selected} setSelected={setSelected} execute={executeTests}/>}<ResultCards results={visibleResults}/><button className="finish stage-finish" onClick={() => { if (stage === "immediateTests") { prepareRationales(true); transition("rationale1"); } else transition("interim"); }}>סיימתי לבקש בדיקות</button></>}
         {stage === "rationale1" && <Rationales items={rationale1} setItems={setRationale1} title="פרופ׳ שחף מבקשת הנמקות" intro="פרופ׳ שחף, נציגת קופת החולים, מבקשת להבין את ההיגיון הרפואי מאחורי פעולות שביצעת." prompt={(action) => `ביצעת ${action.label}. מה היה ההיגיון הרפואי מאחורי פעולה זו במקרה הזה?`} next={() => transition("diagnosis")}/>} 
@@ -259,13 +291,25 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
         {stage === "decision" && <FormFields fields={fields.decision || []} form={form} setForm={setForm} next={() => transition("record")}/>} 
         {stage === "record" && <FormFields fields={fields.record || []} form={{ ...recordDefaults, ...form }} setForm={setForm} readonly={Object.keys(recordDefaults)} next={() => transition("explanation")}/>} 
         {stage === "explanation" && <div className="panel"><label className="record-control"><b>הסבר כתוב / תמלול מאושר</b><textarea rows={8} value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="הסבר למטופל בשפה פשוטה…"/></label><div className="audio-controls">{!recording ? <button className="back" onClick={startRecording}>התחל הקלטה</button> : <button className="danger" onClick={stopRecording}>עצור הקלטה</button>}{audio && <><audio controls src={audio}/><a href={audio} download="הסבר-למטופל.webm">הורד הקלטה</a></>}</div><button className="primary" disabled={busy} onClick={async () => { if (await createFeedback()) transition("feedback"); }}>{busy ? "מפיקים משוב…" : "אשר והפק משוב"}</button>{error && <p className="error">{error}</p>}</div>}
-        {stage === "feedback" && <FeedbackView feedback={feedback} busy={busy} regenerate={() => void createFeedback()} print={printFinalReport}/>} 
+        {stage === "feedback" && <FeedbackView feedback={feedback} busy={busy} regenerate={() => void createFeedback()} print={printFinalReport} goHome={goHome}/>} 
       </section></div>
-    <PrintableReport code={code} stage={stage} messages={messages} actions={actions} results={results} rationale1={rationale1} rationale2={rationale2} form={{ ...recordDefaults, ...form }} transcript={transcript} feedback={feedback}/>
+    <PrintableReport code={code} stage={stage} messages={messages} actions={actions} results={shownResults} rationale1={rationale1} rationale2={rationale2} form={{ ...recordDefaults, ...form }} transcript={transcript} feedback={feedback}/>
   </main>;
 }
 
-function Welcome({ caseId, chooseCase, next }: { caseId: CaseId; chooseCase: (id: CaseId) => void; next: () => void }) { const selected = availableCases.find((item) => item.id === caseId); return <div className="panel"><h3>מי מחכה לך במיון?</h3><p>בחר למי לגשת. בשלב זה מוצגים רק פרטים אישיים בסיסיים והתלונה המרכזית.</p><div className="case-options">{availableCases.map((item) => <button type="button" className={item.id === caseId ? "case-option selected" : "case-option"} onClick={() => chooseCase(item.id)} key={item.id}><b>{item.demographics}</b><span>תלונה מרכזית: {item.chiefComplaint}</span></button>)}</div><button className="primary" onClick={next}>גש אל {selected?.demographics}</button></div>; }
+function sessionStatus(summary: SessionSummary | undefined): string | null {
+  if (!summary) return null;
+  return summary.completed ? "הושלם" : `בתהליך: ${stages.find((item) => item.id === summary.stage)?.title ?? "שלב לא ידוע"}`;
+}
+function Welcome({ caseId, chooseCase, next, sessions, onContinue, onRestart }: { caseId: CaseId; chooseCase: (id: CaseId) => void; next: () => void; sessions: SessionSummary[]; onContinue: (id: CaseId) => void; onRestart: (id: CaseId) => void }) {
+  const selected = availableCases.find((item) => item.id === caseId);
+  const saved = sessions.find((item) => item.caseId === caseId);
+  return <div className="panel"><h3>מי מחכה לך במיון?</h3><p>בחר למי לגשת. בשלב זה מוצגים רק פרטים אישיים בסיסיים והתלונה המרכזית. אפשר לעבור בין מטופלים בכל שלב, והעבודה על כל מטופל נשמרת בנפרד.</p>
+    <div className="case-options">{availableCases.map((item) => { const status = sessionStatus(sessions.find((entry) => entry.caseId === item.id)); return <button type="button" className={item.id === caseId ? "case-option selected" : "case-option"} onClick={() => chooseCase(item.id)} key={item.id}><b>{item.demographics}</b><span>תלונה מרכזית: {item.chiefComplaint}</span>{status && <em className="case-status">{status}</em>}</button>; })}</div>
+    {saved ? <div className="resume-box"><p>יש עבודה שמורה עם המטופל הזה ({sessionStatus(saved)}).</p><div className="actions"><button className="primary" onClick={() => onContinue(caseId)}>המשך מהמקום שעצרת</button><button className="back" onClick={() => onRestart(caseId)}>התחל מחדש (מוחק את העבודה השמורה)</button></div></div>
+      : <button className="primary" onClick={next}>גש אל {selected?.demographics}</button>}
+  </div>;
+}
 function Picture({ demographics, chiefComplaint, next }: { demographics: string; chiefComplaint: string; next: () => void }) { return <div className="panel"><h3>פניית המטופל</h3><p><b>{demographics}</b></p><p><b>תלונה מרכזית:</b> {chiefComplaint}</p><p>מכאן מתחילים באנמנזה. המטופל ימסור מידע נוסף רק בתגובה לשאלותיך.</p><button className="primary" onClick={next}>התחל אנמנזה</button></div>; }
 function Chat({ messages }: { messages: Message[] }) { return <div className="messages">{messages.map((message, index) => <div className={`message ${message.role === "המטופל" ? "patient" : message.role === "הרופא" ? "student" : "system"}`} key={`${message.role}-${index}`}><span>{message.role}</span><p>{message.text}</p></div>)}</div>; }
 function Ask({ question, setQuestion, label, ask, busy, disabled, error }: { question: string; setQuestion: (value: string) => void; label: string; ask: (event: FormEvent) => void; busy: boolean; disabled: boolean; error: string }) { return <form className="ask-form" onSubmit={ask}><label>{label}</label><div className="input-row"><textarea rows={3} value={question} onChange={(event) => setQuestion(event.target.value)} disabled={busy || disabled}/><button disabled={busy || disabled || !question.trim()}>שלח</button></div>{error && <p className="error">{error}</p>}</form>; }
@@ -274,7 +318,17 @@ function ResultCards({ results }: { results: Result[] }) { return results.length
 function TestFile({ results }: { results: Result[] }) { return <details className="test-file"><summary>תיק הבדיקות ({results.length})</summary>{results.length ? results.map((result) => <p key={`${result.area}-${result.id}`}><b>{result.label}</b><br/>{result.answer.replace(/; /g, " · ")}</p>) : <p>עדיין אין תוצאות בתיק.</p>}</details>; }
 function Rationales({ items, setItems, title, intro, prompt, next }: { items: Rationale[]; setItems: (value: Rationale[]) => void; title: string; intro: string; prompt: (action: Action) => string; next: () => void }) { return <div className="panel rationale"><h3>{title}</h3><div className="professor"><b>פרופ׳ שחף · קופת החולים</b><p>{intro}</p></div>{items.length ? items.map((item, index) => <div className="rationale-question" key={`${item.action.id}-${index}`}><p><b>{prompt(item.action)}</b></p><textarea rows={4} value={item.answer} onChange={(event) => setItems(items.map((other, pos) => pos === index ? { ...other, answer: event.target.value } : other))}/></div>) : <p>לא תועדו פעולות מתאימות לתשאול בשלב זה. הדבר יקבל התייחסות במשוב.</p>}<button className="primary" onClick={next}>שמור והמשך</button></div>; }
 function FormFields({ fields, form, setForm, readonly = [], hints = {}, next }: { fields: string[]; form: Record<string, string>; setForm: (value: Record<string, string>) => void; readonly?: string[]; hints?: Record<string, string>; next: () => void }) { return <div className="summary-form">{fields.map((field) => <label key={field}>{field}{hints[field] && <span>{hints[field]}</span>}<textarea rows={4} readOnly={readonly.includes(field)} value={form[field] || ""} onChange={(event) => setForm({ ...form, [field]: event.target.value })}/></label>)}<button className="primary" onClick={next}>שמור והמשך</button></div>; }
-function FeedbackView({ feedback, busy, regenerate, print }: { feedback: Feedback | null; busy: boolean; regenerate: () => void; print: () => void }) { return <div className="panel feedback"><h3>משוב איכותני</h3>{busy ? <p>פרופ׳ שחף מכינה משוב. הדוח ייפתח אוטומטית כשתבקש הדפסה לאחר סיום ההפקה.</p> : feedback ? Object.entries(feedback).map(([heading, domain]) => <section key={heading}><h4>{heading}</h4><b>מה נעשה היטב</b><ul>{domain.good.map((line) => <li key={line}>{line}</li>)}</ul><b>מה חשוב לשקול מחדש</b><ul>{domain.reconsider.map((line) => <li key={line}>{line}</li>)}</ul></section>) : <p>המשוב טרם הופק.</p>}<button className="back" disabled={busy} onClick={regenerate}>הפק/עדכן משוב</button><button className="print" disabled={busy} onClick={print}>{busy ? "מפיקים דוח…" : "הדפס / שמור PDF סופי"}</button></div>; }
+/** The fallback report has a single heading; the full report has one section per domain. */
+const isShortFeedback = (feedback: Feedback | null) => Boolean(feedback) && Object.keys(feedback!).length === 1;
+function FeedbackView({ feedback, busy, regenerate, print, goHome }: { feedback: Feedback | null; busy: boolean; regenerate: () => void; print: () => void; goHome: () => void }) {
+  return <div className="panel feedback"><h3>משוב איכותני</h3>
+    {!busy && isShortFeedback(feedback) && <p className="warn" role="status">קיבלת משוב מקוצר, כי המשוב המלא (בכל התחומים) לא הצליח להיווצר הפעם. לחצו על ״הפקת משוב מלא על כל השלבים״ כדי לנסות שוב.</p>}
+    {busy ? <p>פרופ׳ שחף מכינה משוב. הדוח ייפתח אוטומטית כשתבקש הדפסה לאחר סיום ההפקה.</p> : feedback ? Object.entries(feedback).map(([heading, domain]) => <section key={heading}><h4>{heading}</h4><b>מה נעשה היטב</b><ul>{domain.good.map((line) => <li key={line}>{line}</li>)}</ul><b>מה חשוב לשקול מחדש</b><ul>{domain.reconsider.map((line) => <li key={line}>{line}</li>)}</ul></section>) : <p>המשוב טרם הופק.</p>}
+    <button className="back" disabled={busy} onClick={regenerate}>{busy ? "מפיקים משוב…" : "הפקת משוב מלא על כל השלבים"}</button>
+    <button className="print" disabled={busy} onClick={print}>{busy ? "מפיקים דוח…" : "הדפס / שמור PDF סופי"}</button>
+    <button className="back" onClick={goHome}>← חזרה למסך הפתיחה (לטיפול במטופל אחר)</button>
+  </div>;
+}
 function professorQuestion(item: Rationale) { return item.action.area === "בדיקות המשך" ? `בחרת ${item.action.label}. מדוע שלחת לבדיקה זו וכיצד תוצאתה השפיעה על האבחנה?` : `ביצעת ${item.action.label}. מה היה ההיגיון הרפואי מאחורי פעולה זו במקרה הזה?`; }
 function PrintableReport({ code, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback }: { code: string; stage: Stage; messages: Message[]; actions: Action[]; results: Result[]; rationale1: Rationale[]; rationale2: Rationale[]; form: Record<string, string>; transcript: string; feedback: Feedback | null }) { const record = recordFieldNames.map((label) => [label, form[label] || "לא מולא"] as const); const otherAnswers = Object.entries(form).filter(([label]) => !recordFieldNames.includes(label)); return <section className="print-report"><h1>המרפאה הקרדיולוגית הווירטואלית</h1><p>דוח {stage === "feedback" ? "סופי" : "ביניים"} · קוד תלמיד: {code}</p><h2>תמליל הפעילות</h2>{messages.length ? messages.map((message, index) => <p key={index}><b>{message.role}:</b> {message.text}</p>) : <p>לא תועד תמליל בשלב זה.</p>}<h2>פעולות ובדיקות שבוצעו</h2>{actions.map((action) => <p key={`${action.area}-${action.id}`}><b>{action.area}:</b> {action.label}</p>)}<h2>תוצאות שהתקבלו</h2>{results.map((result) => <p key={`${result.area}-${result.id}`}><b>{result.label}:</b> {result.answer.replace(/; /g, " | ")}</p>)}<h2>פניות פרופ׳ שחף והנמקות התלמיד</h2>{[...rationale1, ...rationale2].length ? [...rationale1, ...rationale2].map((item, index) => <section className="print-rationale" key={index}><h3>פנייה {index + 1}: {item.action.label}</h3><p><b>שאלת פרופ׳ שחף:</b> {professorQuestion(item)}</p><p><b>תשובת התלמיד:</b> {item.answer || "לא נענתה הנמקה"}</p></section>) : <p>לא נבחרו פניות להנמקה בשלב זה.</p>}<h2>רשומה רפואית</h2>{record.map(([label, value]) => <p key={label}><b>{label}:</b> {value}</p>)}{otherAnswers.length ? <><h2>החלטות והערכת התלמיד</h2>{otherAnswers.map(([label, value]) => <p key={label}><b>{label}:</b> {value || "לא מולא"}</p>)}</> : null}{transcript ? <><h2>הסבר למטופל — תמלול מאושר</h2><p>{transcript}</p></> : <><h2>הסבר למטופל — תמלול מאושר</h2><p>לא נמסר תמלול.</p></>}{feedback && <><h2>משוב פרופ׳ שחף</h2>{Object.entries(feedback).map(([title, domain]) => <section key={title}><h3>{title}</h3><b>מה נעשה היטב</b><ul>{domain.good.map((line) => <li key={line}>{line}</li>)}</ul><b>מה חשוב לשקול מחדש</b><ul>{domain.reconsider.map((line) => <li key={line}>{line}</li>)}</ul></section>)}</>}</section>; }
 

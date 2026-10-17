@@ -133,7 +133,7 @@ test("feedback returns the seven structured domains with one provider call", asy
 test("malformed structured feedback falls back to a second, plain-text call", async () => {
   const calls = fakeProvider([{ wrong: "shape" }, "חוזקות:\n- יפה\nלשיפור:\n- לחזור"]);
   const feedback = await generateFeedback(config, context().caseFile, { caseId: "CASE-001" });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3, "the full report is tried twice before the short fallback");
   assert.deepEqual(feedback["משוב פרופ׳ שחף"], { good: ["יפה"], reconsider: ["לחזור"] });
 });
 
@@ -143,16 +143,17 @@ test("feedback without a key fails with 503 and makes no call", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("sessions are stored per code, expire, and reject malformed codes", () => {
-  const store = new Map();
-  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+test("sessions are stored per code and patient, expire, and reject malformed codes", () => {
+  const map = new Map();
+  globalThis.localStorage = { get length() { return map.size; }, key: (i) => [...map.keys()][i] ?? null, getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, String(v)), removeItem: (k) => map.delete(k) };
   try {
-    lib.session.saveSession("SIM-ABCDEF12", { stage: "anamnesis" });
-    assert.deepEqual(lib.session.loadSession("SIM-ABCDEF12"), { stage: "anamnesis" });
+    lib.session.saveSession("SIM-ABCDEF12", { caseId: "CASE-001", stage: "anamnesis" });
+    assert.deepEqual(lib.session.loadSession("SIM-ABCDEF12"), { caseId: "CASE-001", stage: "anamnesis" });
     assert.throws(() => lib.session.loadSession("SIM-NOPE0000"), /לא נמצאה/);
     assert.throws(() => lib.session.loadSession("bad"), /קוד שחזור לא תקין/);
-    const key = [...store.keys()][0];
-    store.set(key, JSON.stringify({ expiresAt: Date.now() - 1, updatedAt: 0, payload: {} }));
+    assert.throws(() => lib.session.saveSession("SIM-ABCDEF12", { stage: "anamnesis" }), /נתוני שמירה לא תקינים/, "a session needs a patient");
+    const key = [...map.keys()][0];
+    map.set(key, JSON.stringify({ expiresAt: Date.now() - 1, updatedAt: 0, payload: { caseId: "CASE-001" } }));
     assert.throws(() => lib.session.loadSession("SIM-ABCDEF12"), /לא נמצאה/);
   } finally { delete globalThis.localStorage; }
 });

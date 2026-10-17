@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated. `dataNotice` summarises provider data terms as found on 2026-10-17 and must be re-checked against the current terms of each provider. `reasoningEffort` (chat protocol) asks thinking models to think briefly; `outputTokenHeadroom` is added to the output limit because the model's hidden thinking counts against it (without it a thinking model can use the whole limit and return an empty answer).",
+  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated. `dataNotice` summarises provider data terms as found on 2026-10-17 and must be re-checked against the current terms of each provider. `reasoningEffort` (chat protocol) asks thinking models to think briefly; `outputTokenHeadroom` is added to the output limit because the model's hidden thinking counts against it (without it a thinking model can use the whole limit and return an empty answer). `status`: 'in-use' = used before this registry existed, 'tested' = run in a real simulation by the author, 'untested' = built from documentation only. `recommended` is shown to teachers. `keyHint` only drives a warning when a pasted value does not look like that provider's key (it never blocks).",
   "providers": [
     {
       "id": "openai",
@@ -16,7 +16,10 @@
       },
       "status": "in-use",
       "notes": "לפי אשף ה־API, מפתח במסלול החינמי עשוי לעבוד רק עם מודל מסוים. יש לבחור אותו בשדות המודלים.",
-      "dataNotice": "הקלט והפלט נשלחים ל-OpenAI. אם הופעלה בחשבון המורה תוכנית השיתוף תמורת טוקנים חינמיים, התוכן עשוי לשמש את OpenAI לאימון."
+      "dataNotice": "הקלט והפלט נשלחים ל-OpenAI. אם הופעלה בחשבון המורה תוכנית השיתוף תמורת טוקנים חינמיים, התוכן עשוי לשמש את OpenAI לאימון.",
+      "keyHint": {
+        "prefix": "sk-"
+      }
     },
     {
       "id": "xai",
@@ -31,9 +34,13 @@
         "feedback": "grok-4.7"
       },
       "status": "untested",
-      "notes": "לפי התיעוד, Responses API הוא הממשק המומלץ אצל ספק זה.",
+      "notes": "ניסיון ראשון (17.10.2026) נכשל בשגיאה 400 ללא הסבר. בגרסה זו ההודעה הפרטנית של הספק מוצגת, ותפקיד ההוראות הותאם לתיעוד. לא נבדק מחדש.",
       "dataNotice": "הקלט והפלט נשלחים ל-xAI. תנאי השימוש בנתונים לא נבדקו.",
-      "outputTokenHeadroom": 2048
+      "outputTokenHeadroom": 2048,
+      "systemRole": "system",
+      "keyHint": {
+        "prefix": "xai-"
+      }
     },
     {
       "id": "groq",
@@ -47,11 +54,15 @@
         "response": "openai/gpt-oss-120b",
         "feedback": "openai/gpt-oss-120b"
       },
-      "status": "untested",
-      "notes": "זהו Groq ולא Grok של xAI. קיים מסלול חינמי; המכסות שלו לא אומתו.",
+      "status": "tested",
+      "notes": "בדיקת החיבור הצליחה, אך המכסה החינמית נגמרה מהר בניסוי (17.10.2026), ולכן מומלץ פחות לכיתה. זהו Groq ולא Grok של xAI.",
       "dataNotice": "הקלט והפלט נשלחים ל-Groq. לפי התיעוד, Groq שומרת לוגים עד 30 יום לצורכי אמינות ואבטחה.",
       "reasoningEffort": "low",
-      "outputTokenHeadroom": 2048
+      "outputTokenHeadroom": 2048,
+      "lowFreeQuota": true,
+      "keyHint": {
+        "prefix": "gsk_"
+      }
     },
     {
       "id": "gemini",
@@ -65,11 +76,15 @@
         "response": "gemini-flash-latest",
         "feedback": "gemini-flash-latest"
       },
-      "status": "untested",
-      "notes": "ממשק תואם OpenAI. התאמתו לפלט המובנה של הסימולטור לא אומתה.",
+      "status": "tested",
+      "notes": "נבדק בסימולציה מלאה במסלול החינמי (17.10.2026). ממשק תואם OpenAI.",
       "dataNotice": "הקלט והפלט נשלחים ל-Google. במסלול החינמי התוכן עשוי לשמש את Google לשיפור מוצריה ולהיבדק על ידי אנשים.",
       "reasoningEffort": "low",
-      "outputTokenHeadroom": 2048
+      "outputTokenHeadroom": 2048,
+      "recommended": true,
+      "keyHint": {
+        "prefix": "AIza"
+      }
     },
     {
       "id": "openrouter",
@@ -85,7 +100,10 @@
       },
       "status": "untested",
       "notes": "מנתב למודלים רבים. למודלים החינמיים יש מכסה יומית נמוכה.",
-      "dataNotice": "הקלט והפלט נשלחים ל-OpenRouter ולספק המודל שמאחוריו, ולכל אחד מדיניות משלו. מודלים חינמיים עשויים להיות כפופים לתנאים שונים."
+      "dataNotice": "הקלט והפלט נשלחים ל-OpenRouter ולספק המודל שמאחוריו, ולכל אחד מדיניות משלו. מודלים חינמיים עשויים להיות כפופים לתנאים שונים.",
+      "keyHint": {
+        "prefix": "sk-or-"
+      }
     },
     {
       "id": "mistral",
@@ -101,7 +119,10 @@
       },
       "status": "untested",
       "notes": "מסלול הניסוי החינמי עשוי לשמש לאימון מודלים, ונדרש בו אימות טלפון.",
-      "dataNotice": "הקלט והפלט נשלחים ל-Mistral. במסלול הניסוי החינמי התוכן עשוי לשמש לאימון מודלים."
+      "dataNotice": "הקלט והפלט נשלחים ל-Mistral. במסלול הניסוי החינמי התוכן עשוי לשמש לאימון מודלים.",
+      "keyHint": {
+        "minLength": 30
+      }
     }
   ]
 }

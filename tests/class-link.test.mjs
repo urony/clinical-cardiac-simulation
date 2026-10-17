@@ -117,11 +117,11 @@ test("a cap larger than the request never raises it", async () => {
   assert.equal(bodies[0].max_output_tokens, 650);
 });
 
-test("testConnection sends one short request and ignores the class limits", async () => {
+test("testConnection sends one short request per distinct model and ignores the class limits", async () => {
   const bodies = [];
   globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ output_text: "בסדר" }), { status: 200 }); };
   const storage = memoryStorage();
-  await testConnection({ providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 100, beforeCall: createCallBudget("abcd1234", { maxCalls: 1 }, storage) });
+  await testConnection({ providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 100, models: { classifier: "same", response: "same", feedback: "same" }, beforeCall: createCallBudget("abcd1234", { maxCalls: 1 }, storage) });
   assert.equal(bodies.length, 1);
   assert.equal(bodies[0].max_output_tokens, 256);
   assert.equal(callsUsed("abcd1234", storage), 0, "the teacher's check does not use the students' budget");

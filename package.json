@@ -12,7 +12,8 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist",
-    "case": "node tools/case-tool/cli.mjs"
+    "case": "node tools/case-tool/cli.mjs",
+    "admin": "node tools/case-admin/server.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

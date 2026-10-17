@@ -10,4 +10,5 @@ export default tseslint.config(
   reactHooks.configs.flat.recommended,
   { files: ["src/**", "lib/**"], languageOptions: { globals: globals.browser } },
   { files: ["tests/**", "scripts/**", "tools/**", "*.config.*"], languageOptions: { globals: globals.node } },
+  { files: ["tools/case-admin/public/**"], languageOptions: { globals: globals.browser } },
 );

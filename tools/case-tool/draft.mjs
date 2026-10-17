@@ -149,3 +149,17 @@ export async function draftCase({ brief, template, caseId, complete, onProgress 
   fills.sheets["מטא_מקרה"]["שיוך למסד המחלות"] = { fields: { "ערך": "אין שיוך במסד הכללי (מקרה חדש)" }, needsReview: false, note: "" };
   return fills;
 }
+
+/** A draft with no AI content: only the values that are never written by a model. */
+export function emptyFills(template, caseId, now = () => new Date()) {
+  const fills = { caseId, generatedAt: now().toISOString(), sheets: {}, problems: [], emptyStart: true };
+  for (const spec of SHEETS) {
+    if (!spec.extra) continue;
+    for (const item of pendingItems(template, spec)) {
+      if (!item.auto) continue;
+      (fills.sheets[spec.sheet] ??= {})[item.id] = { fields: { [spec.extra.column]: spec.extra.auto }, needsReview: false, note: "" };
+    }
+  }
+  fills.sheets["מטא_מקרה"] = { "שיוך למסד המחלות": { fields: { "ערך": "אין שיוך במסד הכללי (מקרה חדש)" }, needsReview: false, note: "" } };
+  return fills;
+}

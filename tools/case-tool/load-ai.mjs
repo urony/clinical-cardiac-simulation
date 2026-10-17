@@ -34,3 +34,17 @@ export async function completeFromEnv(env = process.env) {
   const config = { providerId, apiKey: env.CASE_TOOL_API_KEY, timeoutMs: 180000, ...(model ? { models: { classifier: model, response: model, feedback: model } } : {}) };
   return { providerId, providerName: layer.getProvider(providerId).name, complete: (request) => layer.complete(config, request) };
 }
+
+/** Same as completeFromEnv, from an explicit config { providerId, apiKey, model? }. The key is never written anywhere. */
+export async function completeFromConfig({ providerId, apiKey, model }) {
+  const layer = await loadProviderLayer();
+  if (!layer.getProvider(providerId)) throw new Error(`ספק לא מוכר: ${providerId}`);
+  if (!apiKey) throw new Error("לא הוגדר מפתח API.");
+  const config = { providerId, apiKey, timeoutMs: 180000, ...(model ? { models: { classifier: model, response: model, feedback: model } } : {}) };
+  return { providerId, providerName: layer.getProvider(providerId).name, complete: (request) => layer.complete(config, request), providers: layer.providers };
+}
+
+export async function listProviders() {
+  const layer = await loadProviderLayer();
+  return layer.providersForTeachers().map((provider) => ({ id: provider.id, label: layer.providerLabel(provider), status: provider.status, defaultModel: provider.defaultModels.response }));
+}

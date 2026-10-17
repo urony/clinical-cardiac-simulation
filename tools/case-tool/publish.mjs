@@ -34,7 +34,10 @@ export function planPublish({ file, template, catalogue, chiefComplaint, replace
 export function applyPublish({ root, plan, file, workbookPath, replace = false }) {
   const casesDir = path.join(root, "data", "cases");
   fs.writeFileSync(path.join(casesDir, plan.jsonName), JSON.stringify(file, null, 2), "utf8");
-  fs.copyFileSync(workbookPath, path.join(root, "data", "source", path.basename(workbookPath)));
+  if (workbookPath) {
+    fs.mkdirSync(path.join(root, "data", "source"), { recursive: true });
+    fs.copyFileSync(workbookPath, path.join(root, "data", "source", path.basename(workbookPath)));
+  }
   const indexPath = path.join(casesDir, "index.json");
   const catalogue = JSON.parse(fs.readFileSync(indexPath, "utf8"));
   const existing = catalogue.cases.findIndex((entry) => entry.id === plan.entry.id);

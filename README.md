@@ -36,7 +36,7 @@ npm run lint
 
 ## הוספת מקרים (רק אצלך)
 
-כלי מקומי שממלא את תבנית ה-Excel בעזרת AI לטיוטה, בודק ומוסיף מקרה לאתר רק אחרי אישור מפורש: [docs/case-tool.md](docs/case-tool.md). `npm run case -- help`.
+**ממשק ניהול מקומי** (דף שרץ על המחשב שלך בלבד): תיאור מקרה, הפקת טיוטה בעזרת AI, סקירה ועריכה והוספה לאתר רק אחרי אישור מפורש: `npm run admin` (או `npm run admin -- --demo` להכרות בלי AI). ראו [docs/case-admin.md](docs/case-admin.md). קיים גם כלי שורת פקודה לאותה מטרה: [docs/case-tool.md](docs/case-tool.md).
 
 ## קישור כיתה (למורים)
 

@@ -12,7 +12,7 @@ const { phaseItems } = lib.caseData;
 
 const realFetch = globalThis.fetch;
 const FAKE_KEY = "test-key-not-real";
-const config = { providerId: "openai", apiKey: FAKE_KEY };
+const config = { providerId: "openai", apiKey: FAKE_KEY, retryDelayMs: 0 };
 
 function context(caseId = "CASE-001", overrides = {}) {
   const entry = availableCases.find((item) => item.id === caseId);
@@ -102,7 +102,7 @@ test("execute is refused outside the test phases", async () => {
 
 test("provider failure surfaces as an error with the provider's message, not a made-up answer", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: "You have no credits remaining" } }), { status: 429, headers: { "content-type": "application/json" } });
-  await assert.rejects(runSimulationStep(context(), { phase: "anamnesis", question: "שאלה" }), /no credits remaining/);
+  await assert.rejects(runSimulationStep(context(), { phase: "anamnesis", question: "שאלה" }), (error) => error.kind === "quota" && /no credits remaining/.test(error.detail) && /נגמרו/.test(error.message));
 });
 
 test("a network failure gives a clear Hebrew message", async () => {

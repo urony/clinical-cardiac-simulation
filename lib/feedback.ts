@@ -68,6 +68,9 @@ export async function generateFeedback(config: ModelConfig, caseFile: CaseFile, 
     if (structured) return structured;
     return await plainTextFeedback(config, studentWork);
   } catch (error) {
+    // A plain-text retry only helps when the structured reply was unusable. It cannot fix a rejected
+    // key, an exhausted quota, a limit or a connection problem, and would only spend more of the quota.
+    if (error instanceof SimulationError && ["auth", "quota", "rate_limit", "teacher_limit", "config", "network", "timeout"].includes(error.kind)) throw error;
     try { return await plainTextFeedback(config, studentWork); }
     catch { throw error instanceof SimulationError ? error : new SimulationError(error instanceof Error ? error.message : "לא ניתן להפיק משוב."); }
   }

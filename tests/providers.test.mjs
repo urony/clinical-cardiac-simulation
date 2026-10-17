@@ -97,11 +97,11 @@ test("errors are classified: bad key, quota, rate limit, bad reply, network, unk
     if (status) fake(status, payload);
     try { await complete(config, request); return "no error"; } catch (error) { assert.ok(error instanceof SimulationError); return error.kind; }
   };
-  const openai = { providerId: "openai", apiKey: "k" };
+  const openai = { providerId: "openai", apiKey: "k", retryDelayMs: 0 };
   assert.equal(await kindOf(openai, 401, { error: { message: "Incorrect API key" } }), "auth");
   assert.equal(await kindOf(openai, 429, { error: { message: "You have no credits remaining" } }), "quota");
   assert.equal(await kindOf(openai, 429, { error: { message: "Too many requests" } }), "rate_limit");
-  assert.equal(await kindOf({ providerId: "groq", apiKey: "k" }, 500, { error: { message: "boom" } }), "provider");
+  assert.equal(await kindOf({ providerId: "groq", apiKey: "k", retryDelayMs: 0 }, 500, { error: { message: "boom" } }), "provider");
   assert.equal(await kindOf(openai, 200, { output_text: "" }), "bad_response");
   globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
   assert.equal(await kindOf(openai), "network");
@@ -111,9 +111,9 @@ test("errors are classified: bad key, quota, rate limit, bad reply, network, unk
 
 test("the provider's own message is kept in the error so the cause is visible", async () => {
   fake(429, { error: { message: "You have no credits remaining" } });
-  await assert.rejects(complete({ providerId: "openai", apiKey: "k" }, request), /OpenAI API \(429\): You have no credits remaining/);
+  await assert.rejects(complete({ providerId: "openai", apiKey: "k" }, request), (error) => error.detail === "OpenAI (429): You have no credits remaining");
   fake(401, { error: { message: "bad key" } });
-  await assert.rejects(complete({ providerId: "groq", apiKey: "k" }, request), /Groq API \(401\): bad key/);
+  await assert.rejects(complete({ providerId: "groq", apiKey: "k" }, request), (error) => error.detail === "Groq (401): bad key");
 });
 
 test("text shown to teachers is Hebrew: every provider has a notes line and a data notice", () => {

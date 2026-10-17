@@ -17,3 +17,4 @@
 .setup .link-box{background:#eef6fa;border-radius:10px;padding:14px;display:grid;gap:10px}
 .setup .muted,.muted{color:#51606b;font-size:.92em;margin:0}
 .class-notice{background:#eef6fa;border-inline-start:5px solid #176b87;border-radius:8px;padding:10px 14px;margin:10px 0}
+.slow-notice{background:#fff4dc;border-radius:8px;padding:8px 12px;margin:8px 0}

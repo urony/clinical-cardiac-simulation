@@ -14,6 +14,7 @@ export default function TeacherSetup() {
   const [className, setClassName] = useState("");
   const [models, setModels] = useState<Partial<Record<ModelRole, string>>>({});
   const [maxCalls, setMaxCalls] = useState("200");
+  const [maxPerMinute, setMaxPerMinute] = useState("20");
   const [maxTokens, setMaxTokens] = useState("");
   const [expiryDays, setExpiryDays] = useState(14);
   const [understood, setUnderstood] = useState(false);
@@ -30,6 +31,7 @@ export default function TeacherSetup() {
       className: className.trim() || undefined,
       expiresAt: expiryDays ? Date.now() + expiryDays * DAY : undefined,
       maxCalls: maxCalls.trim() ? Number(maxCalls) : undefined,
+      maxPerMinute: maxPerMinute.trim() ? Number(maxPerMinute) : undefined,
       maxOutputTokens: maxTokens.trim() ? Number(maxTokens) : undefined,
     };
   }
@@ -97,6 +99,9 @@ export default function TeacherSetup() {
       <fieldset className="models"><legend>הגבלות (רכות)</legend>
         <label className="field">מספר פניות AI מרבי לכל תלמיד (שאלה אחת בדרך כלל דורשת 2 פניות; ריק = ללא הגבלה)
           <input type="number" min={1} value={maxCalls} onChange={(event) => setMaxCalls(event.target.value)} dir="ltr"/>
+        </label>
+        <label className="field">קצב: מספר פניות AI מרבי לדקה בכל תלמיד (ריק = ללא הגבלה)
+          <input type="number" min={1} max={600} value={maxPerMinute} onChange={(event) => setMaxPerMinute(event.target.value)} dir="ltr"/>
         </label>
         <label className="field">אורך תשובה מרבי בטוקנים (ריק = ברירת מחדל)
           <input type="number" min={100} max={8000} value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} dir="ltr"/>

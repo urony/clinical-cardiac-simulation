@@ -134,7 +134,7 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
     if (!classConfig) return { providerId: DEFAULT_PROVIDER_ID, apiKey: key };
     return {
       providerId: classConfig.providerId, apiKey: classConfig.apiKey, models: classConfig.models, maxOutputTokens: classConfig.maxOutputTokens,
-      beforeCall: createCallBudget(classConfig.classId, classConfig.maxCalls, window.localStorage),
+      beforeCall: createCallBudget(classConfig.classId, { maxCalls: classConfig.maxCalls, maxPerMinute: classConfig.maxPerMinute, expiresAt: classConfig.expiresAt }, window.localStorage),
     };
   }
   async function step(request: SimulationRequest) {
@@ -143,6 +143,7 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
   async function ask(event: FormEvent) {
     event.preventDefault(); if (!question.trim() || !key) return;
     const text = question.trim(); setQuestion(""); setBusy(true); setError("");
+    let addedDoctorMessage = false;
     try {
       const phase = phaseFor(stage);
       if (stage === "immediateTests" || stage === "followupTests") {
@@ -151,11 +152,18 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
         setPending(found); setSelected(found.map((item: Action) => item.id));
       } else {
         setMessages((old) => [...old, { role: "הרופא", text }]);
+        addedDoctorMessage = true;
         const data = await step({ phase, question: text });
         setMessages((old) => [...old, { role: stage === "anamnesis" ? "המטופל" : "המערכת", text: data.answer ?? "" }]);
         storeActions((data.matchedActions || []).map((item: { id: string; label: string }) => ({ ...item, area: areaFor(stage) })));
       }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "לא התקבלה תשובה."); }
+    } catch (caught) {
+      // Nothing was answered: take the unanswered question out of the chat and give it back to the
+      // student so it can be sent again, instead of showing a conversation that did not happen.
+      if (addedDoctorMessage) setMessages((old) => old.slice(0, -1));
+      setQuestion(text);
+      setError(caught instanceof Error ? caught.message : "לא התקבלה תשובה.");
+    }
     finally { setBusy(false); }
   }
   async function executeTests() {
@@ -239,7 +247,7 @@ export default function Home({ classConfig = null }: { classConfig?: ClassConfig
     <div className="workspace"><aside className="patient-card"><div className="avatar">{meta.initials.slice(0, 1)}</div><p className="card-label">פניית המטופל · {meta.id}</p><h2>{meta.initials}</h2><p>{availableCases.find((item) => item.id === caseId)?.demographics}</p><p><b>תלונה מרכזית:</b> {availableCases.find((item) => item.id === caseId)?.chiefComplaint}</p><div className="rule"/><TestFile results={results}/>{stage !== "feedback" && <button className="finish" onClick={printInterimReport}>הדפס / שמור דוח PDF ביניים</button>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><p className="card-label">שלב {index + 1} מתוך {stages.length}</p><h2>{current.title}</h2></div>{["anamnesis", "examination", "immediateTests"].includes(stage) && index > 2 && <button className="back" onClick={goBack}>חזרה לשלב הקודם</button>}</div>
         {!key && stage !== "welcome" && <div className="pilot-key"><strong>חיבור AI</strong><p>הדבק את מפתח ה־API כדי להפעיל את הסימולציה. המפתח אינו מוצג בדוח ואינו נשמר בקוד.</p><input type="password" value={key} onChange={(event) => setKey(event.target.value.trim())} placeholder="sk-proj-…"/></div>}
-        {introductions[stage] && <div className="stage-intro">{introductions[stage]}</div>}
+        {busy && <SlowNotice/>}{introductions[stage] && <div className="stage-intro">{introductions[stage]}</div>}
         {stage === "welcome" && <Welcome caseId={caseId} chooseCase={chooseCase} next={() => transition("picture")}/>} {stage === "picture" && <Picture demographics={availableCases.find((item) => item.id === caseId)?.demographics || ""} chiefComplaint={availableCases.find((item) => item.id === caseId)?.chiefComplaint || ""} next={() => transition("anamnesis")}/>} 
         {(["anamnesis", "examination"] as Stage[]).includes(stage) && <><Chat messages={messages}/><Ask question={question} setQuestion={setQuestion} label={stage === "anamnesis" ? "מה תרצה לשאול את המטופל?" : "איזו בדיקה גופנית תרצה לבצע?"} ask={ask} busy={busy} disabled={!key} error={error}/><button className="finish stage-finish" onClick={() => transition(stages[index + 1].id)}>סיימתי שלב זה</button></>}
         {(["immediateTests", "followupTests"] as Stage[]).includes(stage) && <><Chat messages={messages}/><Ask question={question} setQuestion={setQuestion} label="איזו בדיקה תרצה לבקש?" ask={ask} busy={busy} disabled={!key} error={error}/>{pending && <ConfirmTests items={pending} selected={selected} setSelected={setSelected} execute={executeTests}/>}<ResultCards results={visibleResults}/><button className="finish stage-finish" onClick={() => { if (stage === "immediateTests") { prepareRationales(true); transition("rationale1"); } else transition("interim"); }}>סיימתי לבקש בדיקות</button></>}
@@ -279,4 +287,14 @@ function ClassNotice({ config }: { config: ClassConfig }) {
     השיחה שלכם נשלחת לספק הבינה המלאכותית שהמורה בחר ({provider?.name ?? config.providerId}). {provider?.dataNotice} אל תכתבו מידע אישי מזהה.
     {config.maxCalls !== undefined && <span> מכסת הפניות שלכם: {used} מתוך {config.maxCalls}.</span>}
   </div>;
+}
+
+/** Mounted only while a request is running; after a few seconds it tells the student the provider is slow. */
+function SlowNotice() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 10000);
+    return () => clearTimeout(timer);
+  }, []);
+  return slow ? <p className="slow-notice" role="status">התשובה מתעכבת. ממתינים לספק ה־AI, וזה יכול לקחת עד דקה.</p> : null;
 }

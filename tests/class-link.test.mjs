@@ -17,7 +17,7 @@ const hashOf = (config) => `#c=${encodeConfig(config)}`;
 const wireHash = (wire) => `#c=${Buffer.from(JSON.stringify(wire), "utf8").toString("base64url")}`;
 
 test("a config round-trips through the link, including Hebrew names, models and limits", () => {
-  const config = { ...base(), className: "י׳ 2 ביולוגיה", models: { classifier: "m-a", response: "m-b" }, expiresAt: Date.now() + 86400000, maxCalls: 150, maxOutputTokens: 500 };
+  const config = { ...base(), className: "י׳ 2 ביולוגיה", models: { classifier: "m-a", response: "m-b" }, expiresAt: Date.now() + 86400000, maxCalls: 150, maxPerMinute: 12, maxOutputTokens: 500 };
   const link = buildClassLink("https://example.github.io/sim/#old", config);
   assert.match(link, /^https:\/\/example\.github\.io\/sim\/#c=[A-Za-z0-9_-]+$/);
   const parsed = parseHash(link.slice(link.indexOf("#")));
@@ -48,7 +48,7 @@ test("fields are validated: key characters, ids, models, limits", () => {
   for (const bad of [
     { ...base(), apiKey: "short" }, { ...base(), apiKey: "has a space inside" }, { ...base(), apiKey: "line\nbreak-key-12345" },
     { ...base(), classId: "BAD ID" }, { ...base(), models: { classifier: "bad model name" } }, { ...base(), className: "x".repeat(61) },
-    { ...base(), maxCalls: 0 }, { ...base(), maxCalls: 1.5 }, { ...base(), maxOutputTokens: 50 }, { ...base(), expiresAt: NaN },
+    { ...base(), maxCalls: 0 }, { ...base(), maxCalls: 1.5 }, { ...base(), maxPerMinute: 0 }, { ...base(), maxOutputTokens: 50 }, { ...base(), expiresAt: NaN },
   ]) assert.notEqual(validateConfig(bad), null, JSON.stringify(bad));
   assert.throws(() => encodeConfig({ ...base(), apiKey: "x" }));
 });
@@ -75,7 +75,7 @@ function memoryStorage() { const map = new Map(); return { getItem: (k) => map.g
 
 test("the call budget allows exactly maxCalls requests, then refuses with a teacher-limit error", () => {
   const storage = memoryStorage();
-  const before = createCallBudget("abcd1234", 3, storage);
+  const before = createCallBudget("abcd1234", { maxCalls: 3 }, storage);
   before(); before(); before();
   assert.equal(callsUsed("abcd1234", storage), 3);
   assert.throws(before, (error) => error.kind === "teacher_limit" && error.status === 429 && /מכסת הפניות/.test(error.message));
@@ -84,23 +84,23 @@ test("the call budget allows exactly maxCalls requests, then refuses with a teac
 
 test("budgets are separate per class and unlimited when no limit is set", () => {
   const storage = memoryStorage();
-  createCallBudget("class-a1", 1, storage)();
-  assert.doesNotThrow(() => createCallBudget("class-b1", 1, storage)());
-  const unlimited = createCallBudget("class-c1", undefined, storage);
+  createCallBudget("class-a1", { maxCalls: 1 }, storage)();
+  assert.doesNotThrow(() => createCallBudget("class-b1", { maxCalls: 1 }, storage)());
+  const unlimited = createCallBudget("class-c1", {}, storage);
   for (let i = 0; i < 500; i++) unlimited();
 });
 
 test("without usable storage the soft limit does not block students", () => {
-  assert.doesNotThrow(() => createCallBudget("abcd1234", 1, undefined)());
+  assert.doesNotThrow(() => createCallBudget("abcd1234", { maxCalls: 1 }, undefined)());
   const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
-  assert.doesNotThrow(() => createCallBudget("abcd1234", 1, broken)());
+  assert.doesNotThrow(() => createCallBudget("abcd1234", { maxCalls: 1 }, broken)());
 });
 
 test("complete() consults the budget before sending and applies the answer-length cap", async () => {
   const bodies = [];
   globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ output_text: "ok" }), { status: 200 }); };
   const storage = memoryStorage();
-  const config = { providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 200, beforeCall: createCallBudget("abcd1234", 1, storage) };
+  const config = { providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 200, beforeCall: createCallBudget("abcd1234", { maxCalls: 1 }, storage) };
   const request = { role: "response", system: "s", user: "u", maxOutputTokens: 650 };
   await complete(config, request);
   assert.equal(bodies[0].max_output_tokens, 200, "cap lowers the limit");
@@ -121,7 +121,7 @@ test("testConnection sends one short request and ignores the class limits", asyn
   const bodies = [];
   globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ output_text: "בסדר" }), { status: 200 }); };
   const storage = memoryStorage();
-  await testConnection({ providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 100, beforeCall: createCallBudget("abcd1234", 0 + 1, storage) });
+  await testConnection({ providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 100, beforeCall: createCallBudget("abcd1234", { maxCalls: 1 }, storage) });
   assert.equal(bodies.length, 1);
   assert.equal(bodies[0].max_output_tokens, 64);
   assert.equal(callsUsed("abcd1234", storage), 0, "the teacher's check does not use the students' budget");
@@ -130,4 +130,23 @@ test("testConnection sends one short request and ignores the class limits", asyn
 test("testConnection reports a rejected key with the provider's message", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: "Incorrect API key provided" } }), { status: 401 });
   await assert.rejects(testConnection({ providerId: "openai", apiKey: FAKE_KEY }), /Incorrect API key provided/);
+});
+
+test("the per-minute limit refuses a burst and frees up as time passes", () => {
+  let clock = 1_000_000;
+  const before = createCallBudget("rate0001", { maxPerMinute: 3, now: () => clock }, undefined);
+  before(); before(); before();
+  assert.throws(before, (error) => error.kind === "rate_limit" && error.status === 429);
+  clock += 30_000;
+  assert.throws(before, (error) => error.kind === "rate_limit", "still inside the same minute");
+  clock += 31_000;
+  assert.doesNotThrow(before);
+});
+
+test("an expired link refuses requests even if the page was opened before it expired", () => {
+  let clock = 5000;
+  const before = createCallBudget("expire01", { expiresAt: 6000, now: () => clock }, undefined);
+  assert.doesNotThrow(before);
+  clock = 6000;
+  assert.throws(before, (error) => error.kind === "teacher_limit" && /פג תוקף/.test(error.message));
 });

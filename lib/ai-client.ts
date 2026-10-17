@@ -16,6 +16,10 @@ export type ModelConfig = {
   maxOutputTokens?: number;
   /** Called before every provider request; may throw to refuse it (e.g. a usage limit). */
   beforeCall?: () => void;
+  /** How long to wait for the provider before giving up. Default 60 seconds. */
+  timeoutMs?: number;
+  /** Pause before the single automatic retry of a network or server (5xx) failure. Default 1500 ms. */
+  retryDelayMs?: number;
 };
 
 export type CompletionRequest = {
@@ -27,14 +31,30 @@ export type CompletionRequest = {
   json?: { name: string; schema: Record<string, unknown> };
 };
 
-export type ErrorKind = "config" | "network" | "auth" | "quota" | "rate_limit" | "provider" | "bad_response" | "invalid_request" | "teacher_limit";
+export type ErrorKind = "config" | "network" | "timeout" | "auth" | "quota" | "rate_limit" | "model" | "provider" | "bad_response" | "invalid_request" | "teacher_limit";
 
-/** An error whose message is safe and meaningful to show to the user. */
+/**
+ * An error whose `message` is Hebrew, safe and meaningful to show to a student. `detail` is the
+ * provider's own wording (often English) for a teacher or for debugging; it never contains the key.
+ */
 export class SimulationError extends Error {
   status: number;
   kind: ErrorKind;
-  constructor(message: string, status = 502, kind: ErrorKind = "provider") { super(message); this.status = status; this.kind = kind; }
+  detail?: string;
+  constructor(message: string, status = 502, kind: ErrorKind = "provider", detail?: string) { super(message); this.status = status; this.kind = kind; this.detail = detail; }
 }
+
+/** What a student sees for each failure. None of these pretends the simulation is still running. */
+export const failureMessages: Record<Exclude<ErrorKind, "config" | "invalid_request" | "teacher_limit">, string> = {
+  network: "לא ניתן להגיע לספק ה־AI. בדקו את החיבור לאינטרנט ונסו שוב.",
+  timeout: "ספק ה־AI לא ענה בזמן. נסו שוב בעוד רגע.",
+  auth: "הספק דחה את המפתח של המורה (שגוי, בוטל או ללא הרשאה). הסימולציה לא יכולה להמשיך. פנו למורה.",
+  quota: "המכסה או היתרה של המורה אצל ספק ה־AI נגמרו או שהוגבלו. הסימולציה לא יכולה להמשיך כרגע. המתינו דקה ונסו שוב, ואם זה חוזר פנו למורה.",
+  rate_limit: "הספק מגביל כרגע את מספר הפניות. המתינו כמה שניות ונסו שוב.",
+  model: "המודל שהמורה בחר אינו זמין עם המפתח הזה. הסימולציה לא יכולה להמשיך. פנו למורה.",
+  provider: "שירות ה־AI של הספק אינו זמין כרגע. נסו שוב בעוד רגע.",
+  bad_response: "התקבלה תשובה לא תקינה מהספק. נסו שוב או נסחו את השאלה מחדש.",
+};
 
 export function resolveModel(config: ModelConfig, provider: ProviderSpec, role: ModelRole) {
   return config.models?.[role] || provider.defaultModels[role];
@@ -81,8 +101,22 @@ function extractChatText(payload: ChatPayload): string | null {
 
 function classify(status: number, message: string): ErrorKind {
   if (status === 401 || status === 403) return "auth";
-  if (status === 429) return /credit|quota|billing|insufficient/i.test(message) ? "quota" : "rate_limit";
+  if (status === 429) return /credit|quota|billing|insufficient|exhausted/i.test(message) ? "quota" : "rate_limit";
+  if (status === 404 || (status === 400 && /model/i.test(message))) return "model";
   return "provider";
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function sendOnce(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...init, signal: controller.signal }); }
+  catch (error) {
+    if (controller.signal.aborted) throw new SimulationError(failureMessages.timeout, 504, "timeout");
+    throw new SimulationError(failureMessages.network, 502, "network", error instanceof Error ? error.message : undefined);
+  }
+  finally { clearTimeout(timer); }
 }
 
 export async function complete(config: ModelConfig, request: CompletionRequest): Promise<string> {
@@ -95,23 +129,41 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
   const responses = provider.protocol === "openai-responses";
   const url = `${provider.baseUrl}${responses ? "/responses" : "/chat/completions"}`;
   const body = responses ? buildResponsesBody(provider, model, request) : buildChatBody(provider, model, request);
+  const init: RequestInit = { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` }, body: JSON.stringify(body) };
+  const timeoutMs = config.timeoutMs ?? 60000;
 
-  let response: Response;
-  try {
-    response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` }, body: JSON.stringify(body) });
-  } catch {
-    throw new SimulationError("לא ניתן להגיע לספק ה־AI. בדקו את החיבור לאינטרנט.", 502, "network");
+  // One automatic retry for a dropped connection or a provider-side (5xx) failure. Auth, quota and
+  // rate-limit errors are not retried: repeating them cannot help and would spend more of the quota.
+  let response: Response | undefined;
+  for (let attempt = 1; attempt <= 2 && !response; attempt += 1) {
+    try {
+      const candidate = await sendOnce(url, init, timeoutMs);
+      if (candidate.status >= 500 && attempt === 1) { await sleep(config.retryDelayMs ?? 1500); continue; }
+      response = candidate;
+    } catch (error) {
+      if (!(error instanceof SimulationError) || error.kind !== "network" || attempt === 2) throw error;
+      await sleep(config.retryDelayMs ?? 1500);
+    }
   }
+  if (!response) throw new SimulationError(failureMessages.provider, 502, "provider");
+
   const payload = await response.json().catch(() => ({})) as OpenAIResponsesPayload & ChatPayload;
   const output = responses ? extractOpenAIText(payload) : extractChatText(payload);
   if (!response.ok || !output) {
     const detail = (responses ? extractOpenAIError(payload) : typeof payload.error?.message === "string" ? payload.error.message : null) || "לא התקבלה תשובה קריאה.";
-    throw new SimulationError(`${provider.name} API (${response.status}): ${detail}`, 502, response.ok ? "bad_response" : classify(response.status, detail));
+    const kind: ErrorKind = response.ok ? "bad_response" : classify(response.status, detail);
+    throw new SimulationError(failureMessages[kind as keyof typeof failureMessages] ?? failureMessages.provider, 502, kind, `${provider.name} (${response.status}): ${detail}`);
   }
   return output;
 }
 
 /** Sends one very short request so a teacher can check that the provider, model and key work. */
 export async function testConnection(config: ModelConfig): Promise<void> {
-  await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 64 });
+  try {
+    await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 64 });
+  } catch (error) {
+    // The teacher sees the provider's own wording as well, to tell a wrong key from a missing model.
+    if (error instanceof SimulationError && error.detail) throw new SimulationError(`${error.message} (פרטי הספק: ${error.detail})`, error.status, error.kind, error.detail);
+    throw error;
+  }
 }

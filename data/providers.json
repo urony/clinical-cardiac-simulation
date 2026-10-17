@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated. `dataNotice` summarises provider data terms as found on 2026-10-17 and must be re-checked against the current terms of each provider.",
+  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated. `dataNotice` summarises provider data terms as found on 2026-10-17 and must be re-checked against the current terms of each provider. `reasoningEffort` (chat protocol) asks thinking models to think briefly; `outputTokenHeadroom` is added to the output limit because the model's hidden thinking counts against it (without it a thinking model can use the whole limit and return an empty answer).",
   "providers": [
     {
       "id": "openai",
@@ -32,7 +32,8 @@
       },
       "status": "untested",
       "notes": "לפי התיעוד, Responses API הוא הממשק המומלץ אצל ספק זה.",
-      "dataNotice": "הקלט והפלט נשלחים ל-xAI. תנאי השימוש בנתונים לא נבדקו."
+      "dataNotice": "הקלט והפלט נשלחים ל-xAI. תנאי השימוש בנתונים לא נבדקו.",
+      "outputTokenHeadroom": 2048
     },
     {
       "id": "groq",
@@ -48,7 +49,9 @@
       },
       "status": "untested",
       "notes": "זהו Groq ולא Grok של xAI. קיים מסלול חינמי; המכסות שלו לא אומתו.",
-      "dataNotice": "הקלט והפלט נשלחים ל-Groq. לפי התיעוד, Groq שומרת לוגים עד 30 יום לצורכי אמינות ואבטחה."
+      "dataNotice": "הקלט והפלט נשלחים ל-Groq. לפי התיעוד, Groq שומרת לוגים עד 30 יום לצורכי אמינות ואבטחה.",
+      "reasoningEffort": "low",
+      "outputTokenHeadroom": 2048
     },
     {
       "id": "gemini",
@@ -64,7 +67,9 @@
       },
       "status": "untested",
       "notes": "ממשק תואם OpenAI. התאמתו לפלט המובנה של הסימולטור לא אומתה.",
-      "dataNotice": "הקלט והפלט נשלחים ל-Google. במסלול החינמי התוכן עשוי לשמש את Google לשיפור מוצריה ולהיבדק על ידי אנשים."
+      "dataNotice": "הקלט והפלט נשלחים ל-Google. במסלול החינמי התוכן עשוי לשמש את Google לשיפור מוצריה ולהיבדק על ידי אנשים.",
+      "reasoningEffort": "low",
+      "outputTokenHeadroom": 2048
     },
     {
       "id": "openrouter",

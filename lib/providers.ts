@@ -10,6 +10,10 @@ export type ProviderSpec = {
   baseUrl: string;
   /** Responses-API providers that accept `reasoning.effort`. */
   supportsReasoningEffort?: boolean;
+  /** Chat-completions providers: asks thinking models to think briefly ("minimal" | "low" | "medium" | "high"). */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** Extra output tokens added to every request: hidden thinking counts against the limit of thinking models. */
+  outputTokenHeadroom?: number;
   /** Chat-completions field that limits output length. */
   maxTokensParam?: string;
   /** "json_schema" = strict schema in the request; "json_object" = JSON mode, schema is described in the prompt. */

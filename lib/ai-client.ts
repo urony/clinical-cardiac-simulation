@@ -31,7 +31,7 @@ export type CompletionRequest = {
   json?: { name: string; schema: Record<string, unknown> };
 };
 
-export type ErrorKind = "config" | "network" | "timeout" | "auth" | "quota" | "rate_limit" | "model" | "provider" | "bad_response" | "invalid_request" | "teacher_limit";
+export type ErrorKind = "config" | "network" | "timeout" | "auth" | "quota" | "rate_limit" | "model" | "provider" | "bad_response" | "invalid_request" | "teacher_limit" | "truncated";
 
 /**
  * An error whose `message` is Hebrew, safe and meaningful to show to a student. `detail` is the
@@ -54,6 +54,7 @@ export const failureMessages: Record<Exclude<ErrorKind, "config" | "invalid_requ
   model: "המודל שהמורה בחר אינו זמין עם המפתח הזה. הסימולציה לא יכולה להמשיך. פנו למורה.",
   provider: "שירות ה־AI של הספק אינו זמין כרגע. נסו שוב בעוד רגע.",
   bad_response: "התקבלה תשובה לא תקינה מהספק. נסו שוב או נסחו את השאלה מחדש.",
+  truncated: "המודל לא הספיק לסיים את התשובה (נגמרה מגבלת האורך). נסו שוב, ואם זה חוזר פנו למורה.",
 };
 
 export function resolveModel(config: ModelConfig, provider: ProviderSpec, role: ModelRole) {
@@ -65,7 +66,7 @@ export function buildResponsesBody(provider: ProviderSpec, model: string, reques
   return {
     model,
     ...(provider.supportsReasoningEffort ? { reasoning: { effort: "low" } } : {}),
-    max_output_tokens: request.maxOutputTokens,
+    max_output_tokens: request.maxOutputTokens + (provider.outputTokenHeadroom ?? 0),
     input: [
       { role: "developer", content: [{ type: "input_text", text: request.system }] },
       { role: "user", content: [{ type: "input_text", text: request.user }] },
@@ -81,7 +82,8 @@ export function buildChatBody(provider: ProviderSpec, model: string, request: Co
     : "";
   return {
     model,
-    [provider.maxTokensParam || "max_tokens"]: request.maxOutputTokens,
+    [provider.maxTokensParam || "max_tokens"]: request.maxOutputTokens + (provider.outputTokenHeadroom ?? 0),
+    ...(provider.reasoningEffort ? { reasoning_effort: provider.reasoningEffort } : {}),
     messages: [
       { role: "system", content: request.system + describeSchema },
       { role: "user", content: request.user },
@@ -92,7 +94,31 @@ export function buildChatBody(provider: ProviderSpec, model: string, request: Co
   };
 }
 
-type ChatPayload = { choices?: { message?: { content?: unknown } }[]; error?: { message?: unknown } };
+type ChatPayload = {
+  choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
+  error?: { message?: unknown };
+  usage?: { completion_tokens?: unknown; completion_tokens_details?: { reasoning_tokens?: unknown } };
+  status?: unknown;
+  incomplete_details?: { reason?: unknown };
+};
+
+/** Short, safe description of why a reply had no usable text (shown to the teacher, never contains the key). */
+function describeReply(payload: ChatPayload, responses: boolean): { text: string; truncated: boolean } {
+  const parts: string[] = [];
+  let truncated = false;
+  if (responses) {
+    if (typeof payload.status === "string") parts.push(`status: ${payload.status}`);
+    const reason = payload.incomplete_details?.reason;
+    if (typeof reason === "string") { parts.push(`incomplete: ${reason}`); truncated = /max/i.test(reason); }
+  } else {
+    const finish = payload.choices?.[0]?.finish_reason;
+    if (typeof finish === "string") { parts.push(`finish_reason: ${finish}`); truncated = finish === "length"; }
+    if (typeof payload.usage?.completion_tokens === "number") parts.push(`completion_tokens: ${payload.usage.completion_tokens}`);
+    const thinking = payload.usage?.completion_tokens_details?.reasoning_tokens;
+    if (typeof thinking === "number") parts.push(`reasoning_tokens: ${thinking}`);
+  }
+  return { text: parts.join(", "), truncated };
+}
 
 function extractChatText(payload: ChatPayload): string | null {
   const content = payload.choices?.[0]?.message?.content;
@@ -149,9 +175,13 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
 
   const payload = await response.json().catch(() => ({})) as OpenAIResponsesPayload & ChatPayload;
   const output = responses ? extractOpenAIText(payload) : extractChatText(payload);
-  if (!response.ok || !output) {
-    const detail = (responses ? extractOpenAIError(payload) : typeof payload.error?.message === "string" ? payload.error.message : null) || "לא התקבלה תשובה קריאה.";
-    const kind: ErrorKind = response.ok ? "bad_response" : classify(response.status, detail);
+  const reply = describeReply(payload, responses);
+  // A structured (JSON) answer that was cut off is unusable even though some text arrived.
+  const cutOffJson = Boolean(output) && reply.truncated && Boolean(request.json);
+  if (!response.ok || !output || cutOffJson) {
+    const providerMessage = responses ? extractOpenAIError(payload) : typeof payload.error?.message === "string" ? payload.error.message : null;
+    const detail = providerMessage || `לא התקבלה תשובה קריאה${reply.text ? ` (${reply.text})` : ""}`;
+    const kind: ErrorKind = response.ok ? (reply.truncated ? "truncated" : "bad_response") : classify(response.status, detail);
     throw new SimulationError(failureMessages[kind as keyof typeof failureMessages] ?? failureMessages.provider, 502, kind, `${provider.name} (${response.status}): ${detail}`);
   }
   return output;
@@ -160,7 +190,7 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
 /** Sends one very short request so a teacher can check that the provider, model and key work. */
 export async function testConnection(config: ModelConfig): Promise<void> {
   try {
-    await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 64 });
+    await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 256 });
   } catch (error) {
     // The teacher sees the provider's own wording as well, to tell a wrong key from a missing model.
     if (error instanceof SimulationError && error.detail) throw new SimulationError(`${error.message} (פרטי הספק: ${error.detail})`, error.status, error.kind, error.detail);

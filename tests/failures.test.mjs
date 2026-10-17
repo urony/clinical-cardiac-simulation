@@ -131,3 +131,44 @@ test("error text never contains the API key", async () => {
   script({ status: 401, payload: { error: { message: "Incorrect API key provided" } } });
   await assert.rejects(complete(config, request), (error) => !JSON.stringify([error.message, error.detail]).includes(config.apiKey));
 });
+
+test("an answer used up by thinking is reported as cut off, with the reason visible to the teacher", async () => {
+  const groq = { providerId: "gemini", apiKey: "fake-key-1234567890", retryDelayMs: 0 };
+  script({ status: 200, payload: { choices: [{ message: { content: "" }, finish_reason: "length" }], usage: { completion_tokens: 64, completion_tokens_details: { reasoning_tokens: 64 } } } });
+  await assert.rejects(complete(groq, request), (error) => {
+    assert.equal(error.kind, "truncated");
+    assert.equal(error.message, failureMessages.truncated);
+    assert.match(error.detail, /finish_reason: length/);
+    assert.match(error.detail, /reasoning_tokens: 64/);
+    return true;
+  });
+  script({ status: 200, payload: { choices: [{ message: { content: "" } }] } });
+  await assert.rejects(complete(groq, request), (error) => error.kind === "bad_response", "an empty reply without a length stop stays a bad response");
+});
+
+test("a JSON answer cut off in the middle is refused, but cut-off plain text is still shown", async () => {
+  const gemini = { providerId: "gemini", apiKey: "fake-key-1234567890", retryDelayMs: 0 };
+  const partial = { status: 200, payload: { choices: [{ message: { content: '{"matched_ids": ["AN-0' }, finish_reason: "length" }] } };
+  script(partial);
+  await assert.rejects(complete(gemini, { ...request, json: { name: "x", schema: { type: "object" } } }), (error) => error.kind === "truncated");
+  script(partial);
+  assert.equal(await complete(gemini, request), '{"matched_ids": ["AN-0');
+});
+
+test("the Responses API reports an incomplete answer the same way", async () => {
+  script({ status: 200, payload: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [] } });
+  await assert.rejects(complete(config, request), (error) => error.kind === "truncated" && /incomplete: max_output_tokens/.test(error.detail));
+});
+
+test("the teacher's connection check shows why a reply was empty", async () => {
+  const gemini = { providerId: "gemini", apiKey: "fake-key-1234567890", retryDelayMs: 0 };
+  script({ status: 200, payload: { choices: [{ message: { content: "" }, finish_reason: "length" }] } });
+  await assert.rejects(testConnection(gemini), (error) => error.message.includes("פרטי הספק") && error.message.includes("finish_reason: length"));
+});
+
+test("the connection check allows room for thinking models", async () => {
+  const bodies = [];
+  globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ choices: [{ message: { content: "בסדר" } }] }), { status: 200 }); };
+  await testConnection({ providerId: "gemini", apiKey: "fake-key-1234567890" });
+  assert.ok(bodies[0].max_tokens >= 256 + 2048, "256 tokens plus the thinking headroom");
+});

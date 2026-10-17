@@ -123,7 +123,7 @@ test("testConnection sends one short request and ignores the class limits", asyn
   const storage = memoryStorage();
   await testConnection({ providerId: "openai", apiKey: FAKE_KEY, maxOutputTokens: 100, beforeCall: createCallBudget("abcd1234", { maxCalls: 1 }, storage) });
   assert.equal(bodies.length, 1);
-  assert.equal(bodies[0].max_output_tokens, 64);
+  assert.equal(bodies[0].max_output_tokens, 256);
   assert.equal(callsUsed("abcd1234", storage), 0, "the teacher's check does not use the students' budget");
 });
 

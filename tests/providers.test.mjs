@@ -63,7 +63,8 @@ test("a Responses provider without reasoning-effort support does not send that f
 
 test("chat-completions providers get system/user messages, a token limit and JSON mode with the schema in the prompt", () => {
   const body = buildChatBody(getProvider("groq"), "M", request);
-  assert.equal(body.max_tokens, 321);
+  assert.equal(body.max_tokens, 321 + 2048, "thinking models get headroom so hidden thinking cannot use up the whole limit");
+  assert.equal(body.reasoning_effort, "low");
   assert.deepEqual(body.messages[1], { role: "user", content: "USER TEXT" });
   assert.match(body.messages[0].content, /^SYSTEM TEXT/);
   assert.ok(body.messages[0].content.includes(JSON.stringify(schema)));
@@ -120,5 +121,23 @@ test("text shown to teachers is Hebrew: every provider has a notes line and a da
   for (const provider of providers) {
     assert.match(provider.notes, /[\u0590-\u05FF]/, `${provider.id}.notes`);
     assert.match(provider.dataNotice, /[\u0590-\u05FF]/, `${provider.id}.dataNotice`);
+  }
+});
+
+test("thinking providers: Gemini and Groq ask for brief thinking and get token headroom; OpenAI's request is unchanged", () => {
+  const gemini = buildChatBody(getProvider("gemini"), "M", request);
+  assert.equal(gemini.reasoning_effort, "low");
+  assert.equal(gemini.max_tokens, 321 + 2048);
+  const mistral = buildChatBody(getProvider("mistral"), "M", request);
+  assert.equal("reasoning_effort" in mistral, false, "providers without thinking get no extra field");
+  assert.equal(mistral.max_tokens, 321);
+  assert.equal(buildResponsesBody(getProvider("openai"), "M", request).max_output_tokens, 321, "OpenAI stays exactly as before");
+  assert.equal(buildResponsesBody(getProvider("xai"), "M", request).max_output_tokens, 321 + 2048);
+});
+
+test("registry values for thinking control are valid", () => {
+  for (const provider of providers) {
+    if (provider.reasoningEffort !== undefined) assert.ok(["minimal", "low", "medium", "high"].includes(provider.reasoningEffort), provider.id);
+    if (provider.outputTokenHeadroom !== undefined) assert.ok(Number.isInteger(provider.outputTokenHeadroom) && provider.outputTokenHeadroom >= 0 && provider.outputTokenHeadroom <= 8000, provider.id);
   }
 });

@@ -113,7 +113,10 @@ export function createAdminServer(options = {}) {
     const t = template();
     const file = fills ? applyFillsToTemplate(t, fills, { approved: true }) : null;
     const validation = file ? validateCase(file, t, { chiefComplaint: meta.chiefComplaint }) : { errors: ["עדיין אין טיוטה"], warnings: [] };
-    const unreviewed = fills ? unreviewedItems(fills) : [];
+    // Readable names for the technical ids (the author should never have to decode "AN-011").
+    const names = new Map();
+    if (fills) for (const sheet of buildView(t, fills)) for (const item of sheet.items) names.set(`${sheet.sheet}:${item.id}`, { label: item.label, sheetTitle: sheet.title });
+    const unreviewed = (fills ? unreviewedItems(fills) : []).map((item) => ({ ...item, label: names.get(`${item.sheet}:${item.id}`)?.label ?? item.id, sheetTitle: names.get(`${item.sheet}:${item.id}`)?.sheetTitle ?? item.sheet }));
     const chiefComplaint = String(meta.chiefComplaint ?? "").trim();
     const blockers = [];
     if (demo) blockers.push("מצב הדגמה: תוכן דוגמה בלבד, אי אפשר להוסיף לאתר");

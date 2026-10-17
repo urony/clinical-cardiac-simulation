@@ -181,6 +181,7 @@
       h("p", {}, `מולאו ${stats.filled} מתוך ${stats.total} פריטים. ${stats.flagged ? `${stats.flaggedChecked} מתוך ${stats.flagged} פריטים שה-AI סימן אושרו כנבדקים.` : "אין פריטים שסומנו לבדיקה."} השינויים נשמרים אוטומטית.`),
       h("div", { class: "row" }, tabs), h("label", { class: "field" }, "סינון", filter),
       h("p", { class: "muted" }, current.guide),
+      h("p", { class: "banner" }, h("b", {}, "מה זה פריט צהוב? "), "פריט שה-AI כתבה בלי שנמסר לה מידע עליו בתיאור, או שהיא לא בטוחה בו. קראו אותו, תקנו אם צריך, וסמנו \"בדקתי\". פריט ללא צבע (כחול דק) נכתב לפי התיאור שלכם, אבל גם אותו כדאי לקרוא."),
       items.length ? items.map(itemCard) : h("p", { class: "ok-box" }, "אין פריטים להצגה בסינון הזה."),
       h("p", {}, h("button", { class: "primary", onclick: () => go(4) }, "המשך לבדיקה והוספה")));
   }
@@ -197,7 +198,7 @@
     });
     const review = item.needsReview ? h("label", { class: "row" }, h("input", { type: "checkbox", style: "width:auto", checked: item.reviewed, onchange: async (event) => { await api("PATCH", `/api/drafts/${state.draftId}/entry`, { sheet: state.sheet, id: item.id, reviewed: event.target.checked }); state.view = await api("GET", `/api/drafts/${state.draftId}/view`); renderDraft(); } }), "בדקתי את הפריט הזה") : null;
     return h("div", { class: "item" + (item.needsReview && !item.reviewed ? " flagged" : "") + (item.filled ? "" : " empty") },
-      h("h4", {}, item.id, " · ", item.label, item.unit ? h("span", { class: "muted" }, `(${item.unit})`) : null, item.needsReview ? h("span", { class: "tag flag" }, item.reviewed ? "נבדק" : "ה-AI ביקש בדיקה") : null),
+      h("h4", {}, item.label, item.unit ? h("span", { class: "muted" }, `(${item.unit})`) : null, item.needsReview ? h("span", { class: "tag flag" }, item.reviewed ? "נבדק" : "ה-AI לא בטוחה, נא לבדוק") : null, h("small", { class: "muted" }, item.id)),
       item.note ? h("div", { class: "note" }, "הערת ה-AI: " + item.note) : null, controls, review, saved);
   }
 
@@ -223,7 +224,10 @@
       check.blockers.length ? h("div", { class: "errors" }, h("b", {}, "מה חוסם את ההוספה:"), h("ul", {}, check.blockers.map((line) => h("li", {}, line)))) : h("div", { class: "ok-box" }, "הבדיקה עברה. אפשר להוסיף את המקרה."),
       check.errorCount ? h("div", { class: "errors" }, h("b", {}, `שגיאות (${check.errorCount}; מוצגות עד 200):`), h("ul", {}, check.errors.slice(0, 60).map((line) => h("li", {}, line))), check.errorCount > 60 ? h("p", { class: "muted" }, "…ועוד. השתמשו בסינון \"רק פריטים ריקים\" בשלב 3.") : null) : null,
       check.warnings.length ? h("div", { class: "banner" }, h("b", {}, "אזהרות:"), h("ul", {}, check.warnings.map((line) => h("li", {}, line)))) : null,
-      check.unreviewed.length ? h("div", { class: "banner" }, h("b", {}, "פריטים שסומנו לבדיקה ועוד לא אושרו:"), h("ul", {}, check.unreviewed.slice(0, 30).map((item) => h("li", {}, `${item.sheet} ${item.id}`)))) : null,
+      check.unreviewed.length ? h("div", { class: "banner" }, h("b", {}, `${check.unreviewed.length} פריטים ש-ה-AI לא הייתה בטוחה בהם וטרם נבדקו:`),
+        h("ul", {}, check.unreviewed.slice(0, 40).map((item) => h("li", {}, h("button", { class: "link", onclick: () => { state.sheet = item.sheet; state.filter = "flag"; go(3); } }, `${item.sheetTitle} · ${item.label}`)))),
+        check.unreviewed.length > 40 ? h("p", { class: "muted" }, "…ועוד") : null,
+        h("p", {}, h("button", { class: "primary", onclick: () => { state.sheet = check.unreviewed[0].sheet; state.filter = "flag"; go(3); } }, "עבור על הפריטים לבדיקה"))) : null,
       h("label", { class: "row" }, confirmBox, "בדקתי את התוכן הקליני של המקרה ואני אחראי עליו."),
       h("p", {}, publishButton, " ", h("span", { class: "muted" }, "הפעולה לא מבצעת commit ולא מפרסמת את האתר.")),
       state.info.python ? null : h("p", { class: "muted" }, "Python עם openpyxl לא נמצא: ייווצר רק קובץ JSON, ללא עותק Excel."));

@@ -185,6 +185,8 @@ test("full flow: brief, AI draft, review, check, publish: a fourth case lands in
     assert.equal(check.canPublish, false);
     assert.ok(check.blockers.some((line) => /טרם אושרו/.test(line)));
     assert.equal(check.errorCount, 0, "the fake model's content is valid; only the human step is missing");
+    assert.ok(check.unreviewed.every((item) => item.label && item.sheetTitle), "flagged items are listed by readable name");
+    assert.ok(check.unreviewed.some((item) => item.sheet === "אנמנזה" && !/^AN-\d+$/.test(item.label)), "not by technical id");
     const early = await ctx.call("POST", `/api/drafts/${id}/publish`, { confirm: true });
     assert.equal(early.status, 400);
 

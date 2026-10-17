@@ -76,6 +76,8 @@ export default function Home() {
   useEffect(() => {
     const existing = localStorage.getItem("clinical-sim-code");
     if (existing) {
+      // localStorage is unavailable during SSR, so the saved code can only be applied after mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCode(existing);
       return;
     }
@@ -91,6 +93,8 @@ export default function Home() {
   }, [code]);
   useEffect(() => {
     if (!printRequested || !feedback) return;
+    // One-shot flag: reset it before opening the print dialog.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPrintRequested(false);
     window.setTimeout(() => window.print(), 0);
   }, [printRequested, feedback]);

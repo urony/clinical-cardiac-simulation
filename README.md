@@ -10,6 +10,20 @@
 
 כל מקרה נשען על תיק נתונים נפרד ב־`data/source/`. הקובץ `scripts/import-case-data.py` הוא הגשר היחיד בין קובץ ה־Excel המאושר לקובץ ה־JSON של המערכת; לאחר עדכון תיק נתונים יש להריץ אותו מחדש. אין לכתוב עובדות מקרה ידנית בקוד.
 
+## הרצה ובדיקה מקומית (Windows)
+
+סקריפטי `npm run build` / `dev` / `install:ci` דורשים Linux (`flock`, `timeout`), ולכן ב-Windows מריצים את הכלים ישירות:
+
+```bash
+npm ci --ignore-scripts      # התקנה לפי קובץ הנעילה
+npx vinext build             # בנייה
+node --test tests/*.test.mjs # בדיקות (לא פונות לשירות AI; הספק מוחלף בזיוף)
+npx tsc --noEmit             # בדיקת טיפוסים
+npx eslint . --ignore-pattern dist --ignore-pattern .next
+```
+
+הבדיקות לא משתמשות במפתח אמיתי ולא שולחות בקשות רשת. הרצת האתר עם AI אמיתי דורשת מפתח API (ראו מסמך ההחלטות).
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`

@@ -422,3 +422,138 @@ test("the case details offer sex as a choice, reject anything else, and the page
   assert.match(app, /goToError/);
   assert.match(app, /לחצו על שגיאה כדי לעבור/);
 });
+
+// ---- publishing to the live site from the interface (commands are faked: no real npm, no real git) ----
+
+/** A fake command runner that records every command and answers from a table. */
+function fakeExec(answers = {}) {
+  const calls = [];
+  const exec = async (command, args) => {
+    const key = [command, ...args].join(" ");
+    calls.push(key);
+    const match = Object.keys(answers).find((pattern) => key.startsWith(pattern));
+    return match ? answers[match] : { code: 0, output: "ok" };
+  };
+  return { exec, calls };
+}
+
+async function publishedCase(ctx) {
+  const id = await createWithDraft(ctx);
+  for (const item of (await ctx.call("POST", `/api/drafts/${id}/check`, {})).json.unreviewed) await ctx.call("PATCH", `/api/drafts/${id}/entry`, { sheet: item.sheet, id: item.id, reviewed: true });
+  assert.equal((await ctx.call("POST", `/api/drafts/${id}/publish`, { confirm: true })).status, 200);
+  return id;
+}
+
+async function runGoLive(ctx, id) {
+  const started = await ctx.call("POST", `/api/drafts/${id}/go-live`, { confirm: true });
+  if (started.status !== 200) return { started };
+  let job;
+  for (let i = 0; i < 200; i += 1) { job = (await ctx.call("GET", `/api/jobs/${started.json.jobId}`)).json; if (job.status !== "running") break; await new Promise((resolve) => setTimeout(resolve, 20)); }
+  return { started, job };
+}
+
+test("go live: tests, then commit of the case files only, then push, in that order", async () => {
+  const { exec, calls } = fakeExec({ "git status": { code: 0, output: " M data/cases/index.json\n?? data/cases/case-004.json\n?? data/source/case-004-patient-database-he.xlsx\n" } });
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const { job } = await runGoLive(ctx, id);
+    assert.equal(job.status, "done", job.error);
+    assert.deepEqual(calls, ["git status --porcelain --untracked-files=all", "npm run test", "git add data/cases data/source", `git commit -m Add ${id}`, "git push origin main"]);
+    assert.deepEqual(job.steps.map((step) => step.status), ["ok", "ok", "ok", "ok"]);
+    assert.ok(!calls.some((call) => /add (-A|\.)/.test(call)), "never adds everything");
+  } finally { await ctx.close(); }
+});
+
+test("go live stops at failing tests: nothing is committed or pushed", async () => {
+  const { exec, calls } = fakeExec({ "git status": { code: 0, output: "?? data/cases/case-004.json\n" }, "npm run test": { code: 1, output: "✖ some test failed" } });
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const { job } = await runGoLive(ctx, id);
+    assert.equal(job.status, "error");
+    assert.match(job.error, /הבדיקות נכשלו/);
+    assert.match(job.steps.find((step) => step.status === "error").output, /some test failed/);
+    assert.ok(!calls.some((call) => call.startsWith("git commit") || call.startsWith("git push") || call.startsWith("git add")));
+  } finally { await ctx.close(); }
+});
+
+test("go live refuses when other files changed, before running anything slow, and names them", async () => {
+  const { exec, calls } = fakeExec({ "git status": { code: 0, output: " M src/App.tsx\n?? data/cases/case-004.json\n" } });
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const { job } = await runGoLive(ctx, id);
+    assert.equal(job.status, "error");
+    assert.match(job.error, /src\/App\.tsx/);
+    assert.deepEqual(calls, ["git status --porcelain --untracked-files=all"], "no tests, commit or push were attempted");
+  } finally { await ctx.close(); }
+});
+
+test("go live reports a failed push and keeps the commit local", async () => {
+  const { exec, calls } = fakeExec({ "git status": { code: 0, output: "?? data/cases/case-004.json\n" }, "git push": { code: 1, output: "fatal: Authentication failed" } });
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const { job } = await runGoLive(ctx, id);
+    assert.equal(job.status, "error");
+    assert.match(job.error, /השליחה ל-GitHub נכשלה/);
+    assert.match(job.steps.at(-1).output, /Authentication failed/);
+    assert.ok(calls.some((call) => call.startsWith("git commit")));
+  } finally { await ctx.close(); }
+});
+
+test("go live with nothing new to commit still pushes (the case may already be committed)", async () => {
+  const { exec, calls } = fakeExec({ "git status": { code: 0, output: "" } });
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const { job } = await runGoLive(ctx, id);
+    assert.equal(job.status, "done");
+    assert.ok(!calls.some((call) => call.startsWith("git commit")));
+    assert.ok(calls.includes("git push origin main"));
+  } finally { await ctx.close(); }
+});
+
+test("go live needs an explicit confirmation, a case that was already added, and is never available in demo mode", async () => {
+  const { exec, calls } = fakeExec();
+  const ctx = await startAdmin({ exec });
+  try {
+    const { json: draft } = await ctx.call("POST", "/api/drafts", {});
+    assert.equal((await ctx.call("POST", `/api/drafts/${draft.id}/go-live`, { confirm: true })).status, 400, "not added to the project files yet");
+    const id = await publishedCase(ctx);
+    assert.equal((await ctx.call("POST", `/api/drafts/${id}/go-live`, {})).status, 400, "no confirmation");
+    assert.deepEqual(calls, [], "nothing ran");
+  } finally { await ctx.close(); }
+  const demo = await startAdmin({ demo: true, complete: undefined, exec });
+  try {
+    const { json: draft } = await demo.call("POST", "/api/drafts", {});
+    assert.equal((await demo.call("POST", `/api/drafts/${draft.id}/go-live`, { confirm: true })).status, 403);
+  } finally { await demo.close(); }
+});
+
+test("two publications cannot run at the same time", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const exec = async (command, args) => { if (command === "npm") await gate; return { code: 0, output: args.join(" ") === "status --porcelain --untracked-files=all" ? "" : "ok" }; };
+  const ctx = await startAdmin({ exec });
+  try {
+    const id = await publishedCase(ctx);
+    const first = await ctx.call("POST", `/api/drafts/${id}/go-live`, { confirm: true });
+    assert.equal(first.status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((await ctx.call("POST", `/api/drafts/${id}/go-live`, { confirm: true })).status, 409);
+    release();
+    for (let i = 0; i < 200; i += 1) { const { json: job } = await ctx.call("GET", `/api/jobs/${first.json.jobId}`); if (job.status !== "running") break; await new Promise((resolve) => setTimeout(resolve, 20)); }
+  } finally { release(); await ctx.close(); }
+});
+
+test("the page has a publish button with a confirmation, and a double-click launcher exists with Windows line endings", () => {
+  const app = fs.readFileSync(path.join(repo, "tools/case-admin/public/app.js"), "utf8");
+  assert.match(app, /פרסם באתר החי/);
+  assert.match(app, /window\.confirm\("לפרסם את המקרה באתר החי/);
+  const launcher = fs.readFileSync(path.join(repo, "start-admin.bat"), "utf8");
+  assert.match(launcher, /npm run admin/);
+  assert.match(launcher, /127\.0\.0\.1:4180/);
+  assert.ok(launcher.includes("\r\n"), "CRLF line endings, as cmd.exe expects");
+});

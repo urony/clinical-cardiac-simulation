@@ -12,6 +12,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateCase } from "../case-tool/case-validation.mjs";
@@ -34,6 +35,19 @@ const BRIEF_SECTIONS = [
   ["history", "אנמנזה: עובדות מרכזיות"], ["exam", "בדיקה גופנית: ממצאים מרכזיים"], ["tests", "בדיקות עזר"],
   ["followup", "בדיקות המשך"], ["decisions", "החלטות וטיפול"], ["feedback", "נקודות לחשיבה ולמשוב"],
 ];
+
+/** Runs a fixed command in the project folder and returns its exit code and the end of its output. Never called with user input. */
+function defaultExec(root) {
+  return (command, args) => new Promise((resolve) => {
+    // On Windows "npm" is a .cmd file and needs a shell; the arguments are fixed strings, never user input.
+    const child = spawn(command, args, { cwd: root, shell: process.platform === "win32" && command === "npm", env: process.env });
+    let output = "";
+    const collect = (chunk) => { output = (output + chunk.toString("utf8")).slice(-6000); };
+    child.stdout.on("data", collect); child.stderr.on("data", collect);
+    child.on("error", (error) => resolve({ code: -1, output: error.message }));
+    child.on("close", (code) => resolve({ code, output }));
+  });
+}
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -61,6 +75,7 @@ export function createAdminServer(options = {}) {
   const templateXlsx = path.join(root, "data", "template", "clinical-simulation-case-template-v2-he.xlsx");
   const indexPath = path.join(root, "data", "cases", "index.json");
   const jobs = new Map();
+  const exec = options.exec ?? defaultExec(root);
   let port = 0;
   // The AI settings. The key is kept here only; it is never returned by any endpoint.
   const ai = { providerId: env.CASE_TOOL_PROVIDER || "gemini", apiKey: env.CASE_TOOL_API_KEY || "", model: env.CASE_TOOL_MODEL || "" };
@@ -235,7 +250,7 @@ export function createAdminServer(options = {}) {
   route("GET", "/api/jobs/([0-9a-f-]{36})", async (_body, [jobId]) => {
     const job = jobs.get(jobId);
     if (!job) throw new HttpError(404, "המשימה לא נמצאה");
-    return { status: job.status, progress: job.progress, error: job.error, problems: job.problems };
+    return { status: job.status, progress: job.progress, error: job.error, problems: job.problems, steps: job.steps ?? [] };
   });
 
   route("GET", "/api/drafts/(CASE-\\d+)/view", async (_body, [id]) => {
@@ -289,6 +304,57 @@ export function createAdminServer(options = {}) {
       written: [`data/cases/${plan.jsonName}`, "data/cases/index.json", ...(workbookPath ? [`data/source/${path.basename(workbookPath)}`] : [])],
       nextSteps: ["npm test", `git add data && git commit -m "Add ${id}" && git push`],
     };
+  });
+
+  // Publishes an already-added case to the live site: tests, commit of the case files only, push. Each step must pass.
+  route("POST", "/api/drafts/(CASE-\\d+)/go-live", async (body, [id]) => {
+    if (demo) throw new HttpError(403, "מצב הדגמה: אי אפשר לפרסם");
+    if (body.confirm !== true) throw new HttpError(400, "נדרש אישור מפורש לפרסום");
+    if (readDraftFile(id, "meta.json", {}).status !== "published" || !catalogue().cases.some((entry) => entry.id === id)) throw new HttpError(400, "המקרה עוד לא נוסף לקבצי הפרויקט (שלב 4)");
+    if ([...jobs.values()].some((job) => job.kind === "go-live" && job.status === "running")) throw new HttpError(409, "פרסום כבר רץ");
+    const job = { id: crypto.randomUUID(), caseId: id, kind: "go-live", status: "running", progress: [], steps: [], error: null, problems: [] };
+    jobs.set(job.id, job);
+    const step = async (name, run) => {
+      const entry = { name, status: "running", output: "" };
+      job.steps.push(entry);
+      const result = await run();
+      entry.status = result.ok ? "ok" : "error"; entry.output = result.output ?? "";
+      if (!result.ok) throw new Error(result.message ?? `השלב "${name}" נכשל`);
+    };
+    void (async () => {
+      try {
+        let hasChanges = false;
+        await step("בדיקה שנשלחים רק קובצי המקרה", async () => {
+          const status = await exec("git", ["status", "--porcelain", "--untracked-files=all"]);
+          if (status.code !== 0) return { ok: false, output: status.output, message: "לא ניתן לקרוא את מצב git. האם התיקייה היא מאגר git?" };
+          const changed = status.output.split("\n").map((line) => line.slice(3).trim().replace(/^"|"$/g, "")).filter(Boolean);
+          const foreign = changed.filter((file) => !file.startsWith("data/cases/") && !file.startsWith("data/source/"));
+          if (foreign.length) return { ok: false, output: foreign.join("\n"), message: `יש בפרויקט שינויים נוספים שאינם קובצי המקרה, ולכן לא אפרסם אוטומטית: ${foreign.slice(0, 5).join(", ")}` };
+          hasChanges = changed.length > 0;
+          return { ok: true, output: hasChanges ? changed.join("\n") : "אין שינויים חדשים (ייתכן שהמקרה כבר נשמר)" };
+        });
+        await step("הרצת הבדיקות (npm test)", async () => {
+          const tests = await exec("npm", ["run", "test"]);
+          return { ok: tests.code === 0, output: tests.output, message: "הבדיקות נכשלו, ולכן שום דבר לא פורסם. ראו את הפלט למטה." };
+        });
+        if (hasChanges) {
+          await step("שמירת הקבצים (commit)", async () => {
+            const add = await exec("git", ["add", "data/cases", "data/source"]);
+            if (add.code !== 0) return { ok: false, output: add.output };
+            const commit = await exec("git", ["commit", "-m", `Add ${id}`]);
+            return { ok: commit.code === 0, output: commit.output };
+          });
+        }
+        await step("שליחה ל-GitHub (push)", async () => {
+          const push = await exec("git", ["push", "origin", "main"]);
+          return { ok: push.code === 0, output: push.output, message: "השליחה ל-GitHub נכשלה. ייתכן שחסרה הרשאה או שיש עדכונים חדשים במאגר." };
+        });
+        job.status = "done";
+      } catch (error) {
+        job.status = "error"; job.error = error.message;
+      }
+    })();
+    return { jobId: job.id };
   });
 
   // ---- http plumbing -----------------------------------------------------------------------------

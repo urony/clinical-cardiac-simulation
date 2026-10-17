@@ -248,6 +248,33 @@
   }
 
   // ---- check and publish --------------------------------------------------------------------------------
+  /** One button that runs the tests, commits only the case files and pushes: the site updates by itself afterwards. */
+  function goLivePanel() {
+    const steps = h("ul", { class: "progress" });
+    const outcome = h("div", {});
+    const button = h("button", { class: "primary" }, "פרסם באתר החי");
+    button.addEventListener("click", async () => {
+      if (!window.confirm("לפרסם את המקרה באתר החי? הפעולה מריצה בדיקות, שומרת את קובצי המקרה ב-git ושולחת ל-GitHub. התלמידים יראו את המקרה בעוד כדקה-שתיים.")) return;
+      button.disabled = true; clear(outcome);
+      try {
+        const { jobId } = await api("POST", `/api/drafts/${state.draftId}/go-live`, { confirm: true });
+        const timer = setInterval(async () => {
+          try {
+            const job = await api("GET", `/api/jobs/${jobId}`);
+            clear(steps);
+            job.steps.forEach((step) => steps.append(h("li", {}, (step.status === "ok" ? "✓ " : step.status === "error" ? "✗ " : "… ") + step.name)));
+            if (job.status === "running") return;
+            clearInterval(timer);
+            const failed = job.steps.find((step) => step.status === "error");
+            if (job.status === "done") outcome.append(h("div", { class: "ok-box" }, h("b", {}, "נשלח ל-GitHub. "), "האתר יתעדכן בעוד כדקה-שתיים. בדקו בכתובת: https://urony.github.io/clinical-cardiac-simulation/"));
+            else { button.disabled = false; outcome.append(h("div", { class: "errors" }, h("b", {}, job.error), failed?.output ? h("pre", {}, failed.output.slice(-1800)) : null)); }
+          } catch (error) { clearInterval(timer); button.disabled = false; outcome.append(h("div", { class: "errors" }, error.message)); }
+        }, 1500);
+      } catch (error) { button.disabled = false; outcome.append(h("div", { class: "errors" }, error.message)); }
+    });
+    return h("div", { class: "panel" }, h("h3", {}, "פרסום באתר"), h("p", { class: "muted" }, "ההרצה לוקחת כדקה בגלל הבדיקות. אם משהו נכשל, שום דבר לא נשלח."), button, steps, outcome);
+  }
+
   /** The error text starts with the sheet it is about (or "מטא" for the case details); take the author there. */
   async function goToError(line) {
     const sheets = ["מטא_מקרה", "אנמנזה", "בדיקה_גופנית", "תוצאות_מספריות", "בדיקות_מיידיות", "בדיקות_המשך", "החלטות_וטיפול", "כללי_משוב"];
@@ -270,7 +297,8 @@
     });
     sync();
     if (state.publishResult) return h("div", { class: "panel" }, h("div", { class: "ok-box" }, h("b", {}, "המקרה " + state.publishResult.entry.id + " נוסף לקבצי הפרויקט."), h("ul", {}, state.publishResult.written.map((line) => h("li", {}, line))), h("p", {}, "קובץ Excel: " + state.publishResult.excel)),
-      h("p", {}, "הצעדים הבאים (בחלון הפקודות, בתיקיית הפרויקט):"), h("pre", {}, state.publishResult.nextSteps.join("\n")), h("p", { class: "muted" }, "האתר הציבורי יתעדכן רק אחרי push."));
+      h("p", {}, "הצעדים הבאים (בחלון הפקודות, בתיקיית הפרויקט):"), h("pre", {}, state.publishResult.nextSteps.join("\n")), h("p", { class: "muted" }, "אפשר לבצע זאת ידנית, או ללחוץ על הכפתור: הוא מריץ את הבדיקות, שומר (commit) רק את קובצי המקרה, ושולח ל-GitHub. האתר הציבורי מתעדכן כדקה-שתיים אחרי השליחה."),
+      goLivePanel());
     return h("div", { class: "panel" },
       h("label", { class: "field" }, "תלונה מרכזית שהתלמיד רואה", h("small", {}, "בלי אבחנה."), complaint),
       h("div", { class: "row" }, h("button", { onclick: async () => { await api("PUT", `/api/drafts/${state.draftId}/brief`, { fields: state.brief.meta.fields, chiefComplaint: complaint.value }); state.brief = await api("GET", `/api/drafts/${state.draftId}`); state.check = await api("POST", `/api/drafts/${state.draftId}/check`, {}); renderDraft(); } }, "שמור ובדוק שוב")),

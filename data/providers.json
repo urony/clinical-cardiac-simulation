@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated.",
+  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated. `dataNotice` summarises provider data terms as found on 2026-10-17 and must be re-checked against the current terms of each provider.",
   "providers": [
     {
       "id": "openai",
@@ -9,9 +9,14 @@
       "baseUrl": "https://api.openai.com/v1",
       "supportsReasoningEffort": true,
       "structuredOutput": "json_schema",
-      "defaultModels": { "classifier": "gpt-5.6", "response": "gpt-5-mini", "feedback": "gpt-5-mini" },
+      "defaultModels": {
+        "classifier": "gpt-5.6",
+        "response": "gpt-5-mini",
+        "feedback": "gpt-5-mini"
+      },
       "status": "in-use",
-      "notes": "A free-plan key reportedly works only with one specific model (per the API-key wizard); the teacher must choose it."
+      "notes": "לפי אשף ה־API, מפתח במסלול החינמי עשוי לעבוד רק עם מודל מסוים. יש לבחור אותו בשדות המודלים.",
+      "dataNotice": "הקלט והפלט נשלחים ל-OpenAI. אם הופעלה בחשבון המורה תוכנית השיתוף תמורת טוקנים חינמיים, התוכן עשוי לשמש את OpenAI לאימון."
     },
     {
       "id": "xai",
@@ -20,9 +25,14 @@
       "baseUrl": "https://api.x.ai/v1",
       "supportsReasoningEffort": false,
       "structuredOutput": "json_schema",
-      "defaultModels": { "classifier": "grok-4.7", "response": "grok-4.7", "feedback": "grok-4.7" },
+      "defaultModels": {
+        "classifier": "grok-4.7",
+        "response": "grok-4.7",
+        "feedback": "grok-4.7"
+      },
       "status": "untested",
-      "notes": "Documentation names the Responses API as the preferred interface."
+      "notes": "לפי התיעוד, Responses API הוא הממשק המומלץ אצל ספק זה.",
+      "dataNotice": "הקלט והפלט נשלחים ל-xAI. תנאי השימוש בנתונים לא נבדקו."
     },
     {
       "id": "groq",
@@ -31,9 +41,14 @@
       "baseUrl": "https://api.groq.com/openai/v1",
       "maxTokensParam": "max_tokens",
       "structuredOutput": "json_object",
-      "defaultModels": { "classifier": "openai/gpt-oss-120b", "response": "openai/gpt-oss-120b", "feedback": "openai/gpt-oss-120b" },
+      "defaultModels": {
+        "classifier": "openai/gpt-oss-120b",
+        "response": "openai/gpt-oss-120b",
+        "feedback": "openai/gpt-oss-120b"
+      },
       "status": "untested",
-      "notes": "Not xAI's Grok. Free plan exists; limits unverified."
+      "notes": "זהו Groq ולא Grok של xAI. קיים מסלול חינמי; המכסות שלו לא אומתו.",
+      "dataNotice": "הקלט והפלט נשלחים ל-Groq. לפי התיעוד, Groq שומרת לוגים עד 30 יום לצורכי אמינות ואבטחה."
     },
     {
       "id": "gemini",
@@ -42,9 +57,14 @@
       "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
       "maxTokensParam": "max_tokens",
       "structuredOutput": "json_object",
-      "defaultModels": { "classifier": "gemini-flash-latest", "response": "gemini-flash-latest", "feedback": "gemini-flash-latest" },
+      "defaultModels": {
+        "classifier": "gemini-flash-latest",
+        "response": "gemini-flash-latest",
+        "feedback": "gemini-flash-latest"
+      },
       "status": "untested",
-      "notes": "OpenAI-compatible endpoint. Compatibility with this app's structured output is unverified. Free-tier content may be used by Google to improve products."
+      "notes": "ממשק תואם OpenAI. התאמתו לפלט המובנה של הסימולטור לא אומתה.",
+      "dataNotice": "הקלט והפלט נשלחים ל-Google. במסלול החינמי התוכן עשוי לשמש את Google לשיפור מוצריה ולהיבדק על ידי אנשים."
     },
     {
       "id": "openrouter",
@@ -53,9 +73,14 @@
       "baseUrl": "https://openrouter.ai/api/v1",
       "maxTokensParam": "max_tokens",
       "structuredOutput": "json_object",
-      "defaultModels": { "classifier": "openrouter/free", "response": "openrouter/free", "feedback": "openrouter/free" },
+      "defaultModels": {
+        "classifier": "openrouter/free",
+        "response": "openrouter/free",
+        "feedback": "openrouter/free"
+      },
       "status": "untested",
-      "notes": "Routes to many models; free models have a low daily request limit."
+      "notes": "מנתב למודלים רבים. למודלים החינמיים יש מכסה יומית נמוכה.",
+      "dataNotice": "הקלט והפלט נשלחים ל-OpenRouter ולספק המודל שמאחוריו, ולכל אחד מדיניות משלו. מודלים חינמיים עשויים להיות כפופים לתנאים שונים."
     },
     {
       "id": "mistral",
@@ -64,9 +89,14 @@
       "baseUrl": "https://api.mistral.ai/v1",
       "maxTokensParam": "max_tokens",
       "structuredOutput": "json_object",
-      "defaultModels": { "classifier": "mistral-small-latest", "response": "mistral-small-latest", "feedback": "mistral-small-latest" },
+      "defaultModels": {
+        "classifier": "mistral-small-latest",
+        "response": "mistral-small-latest",
+        "feedback": "mistral-small-latest"
+      },
       "status": "untested",
-      "notes": "Free experiment plan may use requests for model training and requires phone verification."
+      "notes": "מסלול הניסוי החינמי עשוי לשמש לאימון מודלים, ונדרש בו אימות טלפון.",
+      "dataNotice": "הקלט והפלט נשלחים ל-Mistral. במסלול הניסוי החינמי התוכן עשוי לשמש לאימון מודלים."
     }
   ]
 }

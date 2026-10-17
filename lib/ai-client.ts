@@ -12,6 +12,10 @@ export type ModelConfig = {
   apiKey: string;
   /** Overrides the provider's recommended model per role (e.g. chosen by the teacher). */
   models?: Partial<Record<ModelRole, string>>;
+  /** Upper bound for every answer length (teacher setting). */
+  maxOutputTokens?: number;
+  /** Called before every provider request; may throw to refuse it (e.g. a usage limit). */
+  beforeCall?: () => void;
 };
 
 export type CompletionRequest = {
@@ -23,7 +27,7 @@ export type CompletionRequest = {
   json?: { name: string; schema: Record<string, unknown> };
 };
 
-export type ErrorKind = "config" | "network" | "auth" | "quota" | "rate_limit" | "provider" | "bad_response" | "invalid_request";
+export type ErrorKind = "config" | "network" | "auth" | "quota" | "rate_limit" | "provider" | "bad_response" | "invalid_request" | "teacher_limit";
 
 /** An error whose message is safe and meaningful to show to the user. */
 export class SimulationError extends Error {
@@ -85,7 +89,9 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
   const provider = getProvider(config.providerId);
   if (!provider) throw new SimulationError("ספק ה־AI שנבחר אינו מוכר.", 400, "config");
   if (!config.apiKey) throw new SimulationError("לא הוגדר מפתח AI.", 503, "config");
+  config.beforeCall?.();
   const model = resolveModel(config, provider, request.role);
+  if (config.maxOutputTokens) request = { ...request, maxOutputTokens: Math.min(request.maxOutputTokens, config.maxOutputTokens) };
   const responses = provider.protocol === "openai-responses";
   const url = `${provider.baseUrl}${responses ? "/responses" : "/chat/completions"}`;
   const body = responses ? buildResponsesBody(provider, model, request) : buildChatBody(provider, model, request);
@@ -103,4 +109,9 @@ export async function complete(config: ModelConfig, request: CompletionRequest):
     throw new SimulationError(`${provider.name} API (${response.status}): ${detail}`, 502, response.ok ? "bad_response" : classify(response.status, detail));
   }
   return output;
+}
+
+/** Sends one very short request so a teacher can check that the provider, model and key work. */
+export async function testConnection(config: ModelConfig): Promise<void> {
+  await complete({ ...config, beforeCall: undefined, maxOutputTokens: undefined }, { role: "response", system: "ענה במילה אחת בלבד.", user: "אמור: בסדר", maxOutputTokens: 64 });
 }

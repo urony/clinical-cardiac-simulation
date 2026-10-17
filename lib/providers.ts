@@ -17,6 +17,8 @@ export type ProviderSpec = {
   defaultModels: Record<ModelRole, string>;
   status: "in-use" | "untested";
   notes?: string;
+  /** Hebrew sentence shown to teachers and students about how the provider may use the content. */
+  dataNotice: string;
 };
 
 export const providers = registry.providers as ProviderSpec[];

@@ -4,7 +4,9 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { availableCases, catalogEntry, type CaseId } from "../lib/case-catalog";
 import { loadCase } from "../lib/case-loader";
 import { generateFeedback } from "../lib/feedback";
-import { DEFAULT_PROVIDER_ID } from "../lib/providers";
+import type { ModelConfig } from "../lib/ai-client";
+import { callsUsed, createCallBudget, type ClassConfig } from "../lib/class-link";
+import { DEFAULT_PROVIDER_ID, getProvider } from "../lib/providers";
 import { loadSession, saveSession } from "../lib/session-store";
 import { runSimulationStep, type SimulationRequest } from "../lib/simulation";
 
@@ -47,10 +49,10 @@ const recordFieldNames = fields.record || [];
 const phaseFor = (stage: Stage) => stage === "anamnesis" ? "anamnesis" : stage === "examination" ? "examination" : stage === "immediateTests" ? "immediateTests" : "followupTests";
 const areaFor = (stage: Stage) => stage === "anamnesis" ? "אנמנזה" : stage === "examination" ? "בדיקה גופנית" : stage === "immediateTests" ? "בדיקות בסיסיות" : "בדיקות המשך";
 
-export default function Home() {
+export default function Home({ classConfig = null }: { classConfig?: ClassConfig | null }) {
   const [code, setCode] = useState("SIM-XXXXXX");
   const [caseId, setCaseId] = useState<CaseId>(availableCases[0].id);
-  const [key, setKey] = useState("");
+  const [key, setKey] = useState(classConfig?.apiKey ?? "");
   const [stage, setStage] = useState<Stage>("welcome");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -128,8 +130,15 @@ export default function Home() {
   function goBack() { if (["anamnesis", "examination", "immediateTests"].includes(stage) && index > 2) setStage(stages[index - 1].id); }
   function storeActions(items: Action[]) { setActions((old) => [...old, ...items.filter((item) => !old.some((existing) => existing.id === item.id && existing.area === item.area))]); }
 
+  function modelConfig(): ModelConfig {
+    if (!classConfig) return { providerId: DEFAULT_PROVIDER_ID, apiKey: key };
+    return {
+      providerId: classConfig.providerId, apiKey: classConfig.apiKey, models: classConfig.models, maxOutputTokens: classConfig.maxOutputTokens,
+      beforeCall: createCallBudget(classConfig.classId, classConfig.maxCalls, window.localStorage),
+    };
+  }
   async function step(request: SimulationRequest) {
-    return runSimulationStep({ config: { providerId: DEFAULT_PROVIDER_ID, apiKey: key }, entry: catalogEntry(caseId), caseFile: await loadCase(caseId) }, request);
+    return runSimulationStep({ config: modelConfig(), entry: catalogEntry(caseId), caseFile: await loadCase(caseId) }, request);
   }
   async function ask(event: FormEvent) {
     event.preventDefault(); if (!question.trim() || !key) return;
@@ -184,7 +193,7 @@ export default function Home() {
     if (!key) { setError("יש להכניס מפתח API כדי להפיק משוב."); return false; }
     setBusy(true); setError(""); setPrintRequested(printAfter);
     try {
-      setFeedback(await generateFeedback({ providerId: DEFAULT_PROVIDER_ID, apiKey: key }, await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
+      setFeedback(await generateFeedback(modelConfig(), await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
       return true;
     } catch (caught) { setPrintRequested(false); setError(caught instanceof Error ? caught.message : "לא ניתן להפיק משוב."); }
     finally { setBusy(false); }
@@ -225,7 +234,7 @@ export default function Home() {
 
   return <main className="clinic-shell">
     <header className="topbar"><div><p className="eyebrow">סימולציה קלינית לימודית · {meta.id}</p><h1>המרפאה הקרדיולוגית הווירטואלית</h1></div><div className="case-chip"><span>קוד תלמיד</span><strong>{code}</strong><small>לשחזור עד 14 יום</small><div className="restore"><input value={restore} onChange={(event) => setRestore(event.target.value.toUpperCase())} placeholder="SIM-XXXXXX"/><button onClick={restoreSession}>שחזור</button></div></div></header>
-    {stageNotice && <p className="stage-status">{stageNotice}</p>}{notice && <p className="save-status">{notice}</p>}
+    {classConfig && <ClassNotice config={classConfig}/>}{stageNotice && <p className="stage-status">{stageNotice}</p>}{notice && <p className="save-status">{notice}</p>}
     <nav className="progress">{stages.map((item, pos) => <span key={item.id} className={pos === index ? "active" : pos < index ? "done" : ""}>{pos + 1}. {item.title}</span>)}</nav>
     <div className="workspace"><aside className="patient-card"><div className="avatar">{meta.initials.slice(0, 1)}</div><p className="card-label">פניית המטופל · {meta.id}</p><h2>{meta.initials}</h2><p>{availableCases.find((item) => item.id === caseId)?.demographics}</p><p><b>תלונה מרכזית:</b> {availableCases.find((item) => item.id === caseId)?.chiefComplaint}</p><div className="rule"/><TestFile results={results}/>{stage !== "feedback" && <button className="finish" onClick={printInterimReport}>הדפס / שמור דוח PDF ביניים</button>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><p className="card-label">שלב {index + 1} מתוך {stages.length}</p><h2>{current.title}</h2></div>{["anamnesis", "examination", "immediateTests"].includes(stage) && index > 2 && <button className="back" onClick={goBack}>חזרה לשלב הקודם</button>}</div>
@@ -260,3 +269,14 @@ function FormFields({ fields, form, setForm, readonly = [], hints = {}, next }: 
 function FeedbackView({ feedback, busy, regenerate, print }: { feedback: Feedback | null; busy: boolean; regenerate: () => void; print: () => void }) { return <div className="panel feedback"><h3>משוב איכותני</h3>{busy ? <p>פרופ׳ שחף מכינה משוב. הדוח ייפתח אוטומטית כשתבקש הדפסה לאחר סיום ההפקה.</p> : feedback ? Object.entries(feedback).map(([heading, domain]) => <section key={heading}><h4>{heading}</h4><b>מה נעשה היטב</b><ul>{domain.good.map((line) => <li key={line}>{line}</li>)}</ul><b>מה חשוב לשקול מחדש</b><ul>{domain.reconsider.map((line) => <li key={line}>{line}</li>)}</ul></section>) : <p>המשוב טרם הופק.</p>}<button className="back" disabled={busy} onClick={regenerate}>הפק/עדכן משוב</button><button className="print" disabled={busy} onClick={print}>{busy ? "מפיקים דוח…" : "הדפס / שמור PDF סופי"}</button></div>; }
 function professorQuestion(item: Rationale) { return item.action.area === "בדיקות המשך" ? `בחרת ${item.action.label}. מדוע שלחת לבדיקה זו וכיצד תוצאתה השפיעה על האבחנה?` : `ביצעת ${item.action.label}. מה היה ההיגיון הרפואי מאחורי פעולה זו במקרה הזה?`; }
 function PrintableReport({ code, stage, messages, actions, results, rationale1, rationale2, form, transcript, feedback }: { code: string; stage: Stage; messages: Message[]; actions: Action[]; results: Result[]; rationale1: Rationale[]; rationale2: Rationale[]; form: Record<string, string>; transcript: string; feedback: Feedback | null }) { const record = recordFieldNames.map((label) => [label, form[label] || "לא מולא"] as const); const otherAnswers = Object.entries(form).filter(([label]) => !recordFieldNames.includes(label)); return <section className="print-report"><h1>המרפאה הקרדיולוגית הווירטואלית</h1><p>דוח {stage === "feedback" ? "סופי" : "ביניים"} · קוד תלמיד: {code}</p><h2>תמליל הפעילות</h2>{messages.length ? messages.map((message, index) => <p key={index}><b>{message.role}:</b> {message.text}</p>) : <p>לא תועד תמליל בשלב זה.</p>}<h2>פעולות ובדיקות שבוצעו</h2>{actions.map((action) => <p key={`${action.area}-${action.id}`}><b>{action.area}:</b> {action.label}</p>)}<h2>תוצאות שהתקבלו</h2>{results.map((result) => <p key={`${result.area}-${result.id}`}><b>{result.label}:</b> {result.answer.replace(/; /g, " | ")}</p>)}<h2>פניות פרופ׳ שחף והנמקות התלמיד</h2>{[...rationale1, ...rationale2].length ? [...rationale1, ...rationale2].map((item, index) => <section className="print-rationale" key={index}><h3>פנייה {index + 1}: {item.action.label}</h3><p><b>שאלת פרופ׳ שחף:</b> {professorQuestion(item)}</p><p><b>תשובת התלמיד:</b> {item.answer || "לא נענתה הנמקה"}</p></section>) : <p>לא נבחרו פניות להנמקה בשלב זה.</p>}<h2>רשומה רפואית</h2>{record.map(([label, value]) => <p key={label}><b>{label}:</b> {value}</p>)}{otherAnswers.length ? <><h2>החלטות והערכת התלמיד</h2>{otherAnswers.map(([label, value]) => <p key={label}><b>{label}:</b> {value || "לא מולא"}</p>)}</> : null}{transcript ? <><h2>הסבר למטופל — תמלול מאושר</h2><p>{transcript}</p></> : <><h2>הסבר למטופל — תמלול מאושר</h2><p>לא נמסר תמלול.</p></>}{feedback && <><h2>משוב פרופ׳ שחף</h2>{Object.entries(feedback).map(([title, domain]) => <section key={title}><h3>{title}</h3><b>מה נעשה היטב</b><ul>{domain.good.map((line) => <li key={line}>{line}</li>)}</ul><b>מה חשוב לשקול מחדש</b><ul>{domain.reconsider.map((line) => <li key={line}>{line}</li>)}</ul></section>)}</>}</section>; }
+
+function ClassNotice({ config }: { config: ClassConfig }) {
+  const provider = getProvider(config.providerId);
+  let used = 0;
+  try { used = callsUsed(config.classId, window.localStorage); } catch { used = 0; }
+  return <div className="class-notice" role="note">
+    {config.className && <b>כיתה: {config.className}. </b>}
+    השיחה שלכם נשלחת לספק הבינה המלאכותית שהמורה בחר ({provider?.name ?? config.providerId}). {provider?.dataNotice} אל תכתבו מידע אישי מזהה.
+    {config.maxCalls !== undefined && <span> מכסת הפניות שלכם: {used} מתוך {config.maxCalls}.</span>}
+  </div>;
+}

@@ -7,7 +7,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { build } from "vite";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const input = { simulation: "lib/simulation.ts", feedback: "lib/feedback.ts", catalog: "lib/case-catalog.ts", caseData: "lib/case-data.ts", session: "lib/session-store.ts", client: "lib/ai-client.ts", providers: "lib/providers.ts" };
+const input = { simulation: "lib/simulation.ts", feedback: "lib/feedback.ts", catalog: "lib/case-catalog.ts", caseData: "lib/case-data.ts", session: "lib/session-store.ts", client: "lib/ai-client.ts", providers: "lib/providers.ts", classLink: "lib/class-link.ts" };
 
 export async function loadLib() {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "clinical-sim-test-"));

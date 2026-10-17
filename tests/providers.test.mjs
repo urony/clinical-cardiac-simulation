@@ -115,3 +115,10 @@ test("the provider's own message is kept in the error so the cause is visible", 
   fake(401, { error: { message: "bad key" } });
   await assert.rejects(complete({ providerId: "groq", apiKey: "k" }, request), /Groq API \(401\): bad key/);
 });
+
+test("text shown to teachers is Hebrew: every provider has a notes line and a data notice", () => {
+  for (const provider of providers) {
+    assert.match(provider.notes, /[\u0590-\u05FF]/, `${provider.id}.notes`);
+    assert.match(provider.dataNotice, /[\u0590-\u05FF]/, `${provider.id}.dataNotice`);
+  }
+});

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "_note": "Where teachers are sent to get an API key. wizardUrl is ASSUMED from the wizard's git remote (https://github.com/urony/api-wizard) and has not been checked as a live page; confirm it once the wizard is published, or set it to null to hide the link.",
+  "wizardUrl": "https://urony.github.io/api-wizard/",
+  "toolId": "cardiac-simulator"
+}

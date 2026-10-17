@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { testConnection } from "../lib/ai-client";
 import { buildClassLink, newClassId, validateConfig, type ClassConfig } from "../lib/class-link";
+import { wizardLink } from "../lib/links";
 import { DEFAULT_PROVIDER_ID, getProvider, providers, type ModelRole } from "../lib/providers";
 
 const roleLabels: Record<ModelRole, string> = { classifier: "זיהוי השאלה", response: "תשובת המטופל", feedback: "משוב" };
@@ -23,6 +24,7 @@ export default function TeacherSetup() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const provider = getProvider(providerId)!;
+  const wizardHref = wizardLink();
 
   function buildConfig(): ClassConfig {
     return {
@@ -62,6 +64,7 @@ export default function TeacherSetup() {
     <header className="topbar"><div><p className="eyebrow">למורים</p><h1>הקמת כיתה</h1></div><a className="back" href="#">לסימולטור</a></header>
     <div className="panel">
       <p>הזינו מפתח API של ספק בינה מלאכותית, ותקבלו קישור לשליחה לתלמידים. התלמידים לא יצטרכו להזין או לראות מפתח בממשק. המפתח נשמר רק בקישור, לא בשרת שלנו.</p>
+      {wizardHref && <p className="help-link">אין לכם מפתח API? <a href={wizardHref} target="_blank" rel="noopener noreferrer">אשף ההשגה צעד־אחר־צעד (נפתח בלשונית חדשה)</a>. אחרי שתקבלו מפתח, חזרו לכאן והדביקו אותו.</p>}
       <div className="notice-box">
         <b>לפני שיוצרים קישור: חשוב לדעת</b>
         <ul>

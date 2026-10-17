@@ -43,3 +43,6 @@ next-env.d.ts
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Local case-tool drafts (unreviewed AI output)
+/drafts/

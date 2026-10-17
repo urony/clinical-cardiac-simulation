@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ignore-pattern dist"
+    "lint": "eslint . --ignore-pattern dist",
+    "case": "node tools/case-tool/cli.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

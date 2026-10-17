@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validCaseId } from "../../../lib/case-catalog";
 
 const CREATE = "CREATE TABLE IF NOT EXISTS simulation_sessions (code TEXT PRIMARY KEY, case_id TEXT NOT NULL, payload TEXT NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)";
 
@@ -26,7 +27,7 @@ export async function PUT(request: Request) {
   let body: { code?: string; caseId?: string; payload?: { completed?: boolean } };
   try { body = await request.json(); } catch { return NextResponse.json({ error: "בקשה לא תקינה." }, { status: 400 }); }
   const code = body.code?.trim();
-  if (!code || !/^SIM-[A-Z0-9]{6,10}$/.test(code) || !/^CASE-00[1-3]$/.test(body.caseId || "") || !body.payload) return NextResponse.json({ error: "נתוני שמירה לא תקינים." }, { status: 400 });
+  if (!code || !/^SIM-[A-Z0-9]{6,10}$/.test(code) || !validCaseId(body.caseId) || !body.payload) return NextResponse.json({ error: "נתוני שמירה לא תקינים." }, { status: 400 });
   const now = Date.now(); const days = body.payload.completed ? 14 : 30; const expiresAt = now + days * 24 * 60 * 60 * 1000;
   try {
     const db = await database();

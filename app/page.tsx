@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { availableCases, caseMeta, type CaseId } from "../lib/case-data";
+import { availableCases, catalogEntry, type CaseId } from "../lib/case-catalog";
 
 type Stage = "welcome" | "picture" | "anamnesis" | "examination" | "immediateTests" | "rationale1" | "diagnosis" | "followupTests" | "interim" | "results" | "rationale2" | "decision" | "record" | "explanation" | "feedback";
 type Action = { id: string; label: string; area: string };
@@ -44,7 +44,7 @@ const areaFor = (stage: Stage) => stage === "anamnesis" ? "אנמנזה" : stage
 
 export default function Home() {
   const [code, setCode] = useState("SIM-XXXXXX");
-  const [caseId, setCaseId] = useState<CaseId>("CASE-001");
+  const [caseId, setCaseId] = useState<CaseId>(availableCases[0].id);
   const [key, setKey] = useState("");
   const [stage, setStage] = useState<Stage>("welcome");
   const [question, setQuestion] = useState("");
@@ -71,7 +71,7 @@ export default function Home() {
   const chunks = useRef<Blob[]>([]);
   const index = stages.findIndex((item) => item.id === stage);
   const current = stages[index];
-  const meta = caseMeta(caseId);
+  const meta = catalogEntry(caseId);
 
   useEffect(() => {
     const existing = localStorage.getItem("clinical-sim-code");

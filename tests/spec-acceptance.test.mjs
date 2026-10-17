@@ -27,8 +27,10 @@ test("case labels are selected from human-facing headers rather than technical I
   assert.match(data, /followupTests: \["בדיקה"\]/);
 });
 
-test("all three approved pilot cases are part of the runtime registry", () => {
-  for (const id of ["CASE-001", "CASE-002", "CASE-003"]) assert.match(data, new RegExp(`"${id}"`));
+test("the three approved pilot cases are listed in the case catalogue, not hard-coded in logic", () => {
+  const catalogue = JSON.parse(fs.readFileSync(new URL("../data/cases/index.json", import.meta.url), "utf8"));
+  assert.deepEqual(catalogue.cases.map((entry) => entry.id), ["CASE-001", "CASE-002", "CASE-003"]);
+  for (const source of [page, data, respond, fs.readFileSync(new URL("../app/api/session/route.ts", import.meta.url), "utf8")]) assert.doesNotMatch(source, /"CASE-0dd"/);
   assert.match(page, /מי מחכה לך במיון/);
   assert.match(page, /caseId/);
 });
@@ -50,5 +52,5 @@ test("learner-facing results never expose spreadsheet placeholder text", () => {
 test("server prevents direct disclosure outside test phases and handles ambiguity", () => {
   assert.match(respond, /phase !== "immediateTests" && phase !== "followupTests"/);
   assert.match(respond, /if \(parsed\.ambiguous\)/);
-  assert.match(respond, /phase === "anamnesis" && caseId === "CASE-002" \? 2 : 12/);
+  assert.match(respond, /maxAnamnesisFacts/);
 });

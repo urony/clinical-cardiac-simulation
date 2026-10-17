@@ -145,3 +145,13 @@ test("malformed structured feedback falls back to a second, plain-text call", as
   assert.equal(calls.length, 2);
   assert.ok(json.feedback["משוב פרופ׳ שחף"]);
 });
+
+test("the per-case fact limit comes from the catalogue: CASE-002 answers with at most 2 facts, CASE-001 with more", async () => {
+  const many = (file) => caseIds(file, "אנמנזה", "מזהה רכיב בסיס").slice(0, 6);
+  for (const [caseId, file, expected] of [["CASE-002", "case-002", 2], ["CASE-001", "case-001", 6]]) {
+    const calls = fakeProvider([{ matched_ids: many(file), ambiguous: false }, "תשובה."]);
+    const { json } = await post("/api/simulation/respond", { caseId, phase: "anamnesis", question: "ספר לי הכל" });
+    assert.equal(json.matchedIds.length, expected, caseId);
+    assert.equal(calls.length, 2);
+  }
+});

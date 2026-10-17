@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractOpenAIError, extractOpenAIText, type OpenAIResponsesPayload } from "../../../../lib/openai-response";
 import { caseMeta, phaseItems, validCaseId, type CaseId } from "../../../../lib/case-data";
+import { catalogEntry, DEFAULT_MAX_FACTS } from "../../../../lib/case-catalog";
 
 type Phase = "anamnesis" | "examination" | "immediateTests" | "followupTests";
 const supported = new Set<Phase>(["anamnesis", "examination", "immediateTests", "followupTests"]);
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     });
     let parsed: { matched_ids: string[]; ambiguous: boolean };
     try { parsed = JSON.parse(classification); } catch { throw new Error("תשובת המיון לא הייתה במבנה תקין."); }
-    const maximumFacts = phase === "anamnesis" && caseId === "CASE-002" ? 2 : 12;
+    const maximumFacts = phase === "anamnesis" ? catalogEntry(caseId).maxAnamnesisFacts ?? DEFAULT_MAX_FACTS : DEFAULT_MAX_FACTS;
     const selected = [...new Set((parsed.matched_ids || []).filter((id) => allowed.has(id)))].slice(0, maximumFacts).map((id) => allowed.get(id)!);
     if (body.mode === "recognize") return NextResponse.json({ recognized: selected.map((item) => ({ id: item.id, label: item.label })) });
     if (parsed.ambiguous) {

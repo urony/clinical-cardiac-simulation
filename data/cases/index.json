@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "CASE-001",
+      "file": "case-001.json",
+      "initials": "א׳ ש׳",
+      "sex": "גבר",
+      "age": 58,
+      "demographics": "א׳ ש׳ · גבר · בן 58",
+      "chiefComplaint": "אי־נוחות חוזרת בחזה"
+    },
+    {
+      "id": "CASE-002",
+      "file": "case-002.json",
+      "initials": "מ׳ ר׳",
+      "sex": "אישה",
+      "age": 64,
+      "demographics": "מ׳ ר׳ · אישה · בת 64",
+      "chiefComplaint": "לחץ חזק בחזה שאינו חולף",
+      "maxAnamnesisFacts": 2
+    },
+    {
+      "id": "CASE-003",
+      "file": "case-003.json",
+      "initials": "ר׳ ג׳",
+      "sex": "גבר",
+      "age": 44,
+      "demographics": "ר׳ ג׳ · גבר · בן 44",
+      "chiefComplaint": "כאב בצד שמאל של בית החזה"
+    }
+  ]
+}

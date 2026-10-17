@@ -147,7 +147,9 @@
       } catch (error) { status.textContent = error.message; }
     };
     const providerName = () => info.providers.find((item) => item.id === provider.value)?.label ?? provider.value;
-    return h("div", { class: "panel" },
+    return h("div", {}, chatPanel(), h("div", { class: "panel" },
+      h("h3", {}, "אפשרות ב׳: הפקה אוטומטית עם מפתח API"),
+      h("p", { class: "muted" }, "ה-AI ממלא הכול בבת אחת דרך מפתח ה-API שלך (עולה כסף או מנצל מכסה). אפשר להתעלם מהחלק הזה אם עובדים עם ה-AI בצ'אט."),
       h("h3", {}, "הגדרות ה-AI"),
       info.demo ? h("p", { class: "muted" }, "במצב הדגמה לא נדרש מפתח.") : h("div", {},
         h("label", { class: "field" }, "ספק", provider), h("label", { class: "field" }, "מודל (לא חובה)", model),
@@ -160,7 +162,41 @@
         h("button", { class: "primary", onclick: () => start("ai") }, info.demo ? "הפק טיוטת דוגמה" : "הפק טיוטה בעזרת AI"),
         h("button", { onclick: () => start("empty") }, "התחל טיוטה ריקה (אמלא בעצמי)")),
       status, progress, state.brief.problems.length ? h("div", { class: "errors" }, h("b", {}, "פריטים שלא התקבלו:"), h("ul", {}, state.brief.problems.slice(0, 30).map((line) => h("li", {}, line)))) : null,
-      h("p", { class: "muted" }, "ספק נבחר: " + providerName()));
+      h("p", { class: "muted" }, "ספק נבחר: " + providerName())));
+  }
+
+  /** Option A: work with the author's own AI chat (no API cost): download one document, paste the answers back. */
+  function chatPanel() {
+    const result = h("div", {});
+    const area = h("textarea", { rows: "8", placeholder: "הדביקו כאן את תשובות ה-AI (בלוקי ה-JSON, אפשר את כל השיחה בבת אחת)" });
+    const file = h("input", { type: "file", accept: ".txt,.json,.md" });
+    file.addEventListener("change", async () => { if (file.files[0]) area.value = (area.value ? area.value + "\n" : "") + await file.files[0].text(); });
+    const download = async () => {
+      try {
+        const pack = await api("GET", `/api/drafts/${state.draftId}/ai-package`);
+        const url = URL.createObjectURL(new Blob([pack.text], { type: "text/markdown;charset=utf-8" }));
+        const link = h("a", { href: url, download: pack.filename });
+        document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      } catch (error) { say(error.message); renderDraft(); }
+    };
+    const doImport = async () => {
+      clear(result);
+      try {
+        const outcome = await api("POST", `/api/drafts/${state.draftId}/import`, { text: area.value });
+        result.append(
+          h("div", { class: outcome.rejectedCount ? "banner" : "ok-box" }, `נקלטו ${outcome.accepted} פריטים מתוך ${outcome.blocks} בלוקים. נשארו ${outcome.remaining} פריטים ריקים מתוך ${outcome.total}.`),
+          outcome.rejectedCount ? h("div", { class: "errors" }, h("b", {}, `${outcome.rejectedCount} פריטים לא נקלטו:`), h("ul", {}, outcome.rejected.slice(0, 30).map((item) => h("li", {}, `${item.label || item.id}: ${item.reason}`)))) : null,
+          outcome.keptEdited.length ? h("p", { class: "muted" }, `${outcome.keptEdited.length} פריטים שערכתם ידנית נשארו כפי שהם.`) : null,
+          h("p", {}, h("button", { class: "primary", onclick: () => go(3) }, "המשך לסקירה ועריכה")));
+        area.value = "";
+      } catch (error) { result.append(h("div", { class: "errors" }, error.message)); }
+    };
+    return h("div", { class: "panel" },
+      h("h3", {}, "אפשרות א׳ (מומלצת): עם ה-AI שלך בצ'אט, בלי עלות API"),
+      h("p", {}, "ה-AI שאתם כבר עובדים איתו (ChatGPT, Claude, Gemini ועוד) יכין את המקרה, ואתם מדברים איתו חופשי."),
+      h("ol", {}, h("li", {}, "הורידו את מסמך העבודה והעלו אותו לצ'אט, עם ההוראה: ״קרא את המסמך ובצע את ההוראות בו״."), h("li", {}, "ספרו על המקרה. כשה-AI שאל מספיק, כתבו ״התחל״ ואחר כך ״המשך״ אחרי כל קבוצה (15 קבוצות)."), h("li", {}, "הדביקו כאן את התשובות שלו ולחצו ״ייבא״. אפשר לעשות זאת קבוצה אחרי קבוצה או הכול ביחד.")),
+      h("p", {}, h("button", { class: "primary", onclick: download }, "הורד מסמך עבודה ל-AI")),
+      area, h("div", { class: "row" }, h("span", { class: "muted" }, "או העלו קובץ טקסט:"), file), h("p", {}, h("button", { onclick: doImport }, "ייבא")), result);
   }
 
   // ---- review -----------------------------------------------------------------------------------------

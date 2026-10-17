@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateCase } from "../case-tool/case-validation.mjs";
 import { draftCase, emptyFills, planDraft } from "../case-tool/draft.mjs";
+import { buildChatPackage, importReplies } from "../case-tool/chat-package.mjs";
 import { applyPublish, nextCaseId, planPublish } from "../case-tool/publish.mjs";
 import { findPython, runXlsxTool } from "../case-tool/python.mjs";
 import { applyEdit, buildView, unreviewedItems } from "../case-tool/view.mjs";
@@ -201,6 +202,25 @@ export function createAdminServer(options = {}) {
       }
     })();
     return { jobId: job.id };
+  });
+
+  // Work with the author's own AI chat: one document to give to the chat, and a place to paste its answers back.
+  route("GET", "/api/drafts/(CASE-\\d+)/ai-package", async (_body, [id]) => {
+    const meta = readDraftFile(id, "meta.json", null);
+    if (!meta) throw new HttpError(404, "הטיוטה לא נמצאה");
+    const hasBrief = Object.values(meta.fields ?? {}).some((value) => String(value).trim());
+    return { filename: `${id}-ai-work-document.md`, text: buildChatPackage({ template: template(), brief: hasBrief ? composeBrief(meta.fields) : "", caseId: id }) };
+  });
+
+  route("POST", "/api/drafts/(CASE-\\d+)/import", async (body, [id]) => {
+    if (!readDraftFile(id, "meta.json", null)) throw new HttpError(404, "הטיוטה לא נמצאה");
+    let result;
+    try { result = importReplies({ template: template(), fills: readDraftFile(id, "fills.json", null), raw: String(body.text ?? "").slice(0, MAX_BODY), caseId: id, replace: body.replace === true }); }
+    catch (error) { throw new HttpError(400, error.message); }
+    saveFills(id, result.fills);
+    saveMeta(id, {});
+    const items = buildView(template(), result.fills).flatMap((sheet) => sheet.items);
+    return { accepted: result.accepted.length, rejectedCount: result.rejected.length, rejected: result.rejected.slice(0, 100), keptEdited: result.keptEdited, blocks: result.blocks, remaining: items.filter((item) => !item.filled).length, total: items.length };
   });
 
   route("GET", "/api/jobs/([0-9a-f-]{36})", async (_body, [jobId]) => {

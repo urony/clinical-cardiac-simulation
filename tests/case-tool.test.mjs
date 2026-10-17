@@ -220,7 +220,7 @@ test("next case id continues after the highest id; demographics use the right ge
 // command line safety
 
 function cli(args, env = {}) {
-  return spawnSync(process.execPath, [path.join(root, "tools/case-tool/cli.mjs"), ...args], { encoding: "utf8", env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, LOCALAPPDATA: process.env.LOCALAPPDATA, TEMP: process.env.TEMP, TMP: process.env.TMP, ...env } });
+  return spawnSync(process.execPath, [path.join(root, "tools/case-tool/cli.mjs"), ...args], { encoding: "utf8", env: Object.fromEntries(Object.entries({ PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, LOCALAPPDATA: process.env.LOCALAPPDATA, HOME: process.env.HOME, TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR, ...env }).filter(([, value]) => value !== undefined)) });
 }
 
 test("draft without --yes only prints a plan: no key is read and no request is made", () => {

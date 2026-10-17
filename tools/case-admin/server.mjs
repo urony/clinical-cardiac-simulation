@@ -157,6 +157,15 @@ export function createAdminServer(options = {}) {
     return { id };
   });
 
+  // Deletes only the working folder of a draft (drafts/CASE-NNN). A case that was already added to the site stays there.
+  route("DELETE", "/api/drafts/(CASE-\\d+)", async (_body, [id]) => {
+    const dir = caseDir(id);
+    if (!fs.existsSync(dir)) throw new HttpError(404, "הטיוטה לא נמצאה");
+    if ([...jobs.values()].some((job) => job.caseId === id && job.status === "running")) throw new HttpError(409, "ההפקה עדיין רצה. נסו שוב בעוד רגע.");
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { deleted: true };
+  });
+
   route("GET", "/api/drafts/(CASE-\\d+)", async (_body, [id]) => {
     const meta = readDraftFile(id, "meta.json", null);
     if (!meta) throw new HttpError(404, "הטיוטה לא נמצאה");

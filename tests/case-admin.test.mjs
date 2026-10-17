@@ -368,3 +368,39 @@ test("the brief is composed from the form fields in a fixed order, skipping empt
   assert.ok(text.indexOf("## המטופל") < text.indexOf("## נקודות לחשיבה ולמשוב"));
   assert.doesNotMatch(text, /מטרות למידה/);
 });
+
+test("a draft can be deleted: only its working folder goes, ids are validated, and a running generation blocks it", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const ctx = await startAdmin({ complete: async (request) => { await gate; return fakeComplete(request); } });
+  try {
+    const { json: first } = await ctx.call("POST", "/api/drafts", {});
+    const { json: second } = await ctx.call("POST", "/api/drafts", {});
+    assert.notEqual(first.id, second.id);
+    assert.ok(fs.existsSync(path.join(ctx.root, "drafts", first.id)));
+    assert.equal((await ctx.call("DELETE", `/api/drafts/${first.id}`)).status, 200);
+    assert.ok(!fs.existsSync(path.join(ctx.root, "drafts", first.id)), "the folder is gone");
+    assert.ok(fs.existsSync(path.join(ctx.root, "drafts", second.id)), "other drafts are untouched");
+    assert.equal((await ctx.call("DELETE", `/api/drafts/${first.id}`)).status, 404, "deleting twice");
+    assert.equal((await ctx.call("DELETE", "/api/drafts/CASE-1")).status, 400, "malformed id");
+    assert.equal((await ctx.call("DELETE", "/api/drafts/..%2F..%2Fdata")).status, 404);
+    assert.ok(fs.existsSync(path.join(ctx.root, "data", "cases", "index.json")), "the site data is untouched");
+    assert.equal((await ctx.call("GET", "/api/state")).json.cases.length, 3);
+    assert.ok(!(await ctx.call("GET", "/api/state")).json.drafts.some((draft) => draft.id === first.id));
+
+    // a generation that is still running cannot be deleted from under itself
+    await ctx.call("PUT", `/api/drafts/${second.id}/brief`, { fields: BRIEF_FIELDS, chiefComplaint: "אי-נוחות" });
+    const { json: start } = await ctx.call("POST", `/api/drafts/${second.id}/generate`, { mode: "ai" });
+    assert.equal((await ctx.call("DELETE", `/api/drafts/${second.id}`)).status, 409);
+    release();
+    for (let i = 0; i < 200; i += 1) { const { json: job } = await ctx.call("GET", `/api/jobs/${start.jobId}`); if (job.status !== "running") break; await new Promise((r) => setTimeout(r, 25)); }
+    assert.equal((await ctx.call("DELETE", `/api/drafts/${second.id}`)).status, 200);
+  } finally { release(); await ctx.close(); }
+});
+
+test("the interface offers deleting a draft, with a confirmation", () => {
+  const app = fs.readFileSync(path.join(repo, "tools/case-admin/public/app.js"), "utf8");
+  assert.match(app, /למחוק את הטיוטה/);
+  assert.match(app, /"מחק את הטיוטה הזו"/);
+  assert.match(app, /window\.confirm\(question\)/);
+});

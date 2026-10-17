@@ -76,9 +76,18 @@
       h("div", { class: "panel" }, h("h2", {}, "טיוטות"),
         info.drafts.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "מקרה"), h("th", {}, "נושא"), h("th", {}, "מצב"), h("th", {}, ""))),
           h("tbody", {}, info.drafts.map((draft) => h("tr", {}, h("td", {}, draft.id), h("td", {}, draft.topic || "(ללא נושא)"), h("td", {}, draft.status === "published" ? h("span", { class: "tag ok" }, "נוסף לאתר") : h("span", { class: "tag" }, draft.hasDraft ? "בעבודה" : "רק תיאור")),
-            h("td", {}, h("button", { onclick: () => openDraft(draft.id) }, "פתח")))))) : h("p", { class: "muted" }, "אין טיוטות עדיין."),
+            h("td", {}, h("div", { class: "row" }, h("button", { onclick: () => openDraft(draft.id) }, "פתח"), h("button", { onclick: () => deleteDraft(draft) }, "מחק"))))))) : h("p", { class: "muted" }, "אין טיוטות עדיין."),
         h("p", {}, h("button", { class: "primary", onclick: newDraft }, "+ מקרה חדש (" + info.nextCaseId + ")")))
     );
+  }
+  async function deleteDraft(draft) {
+    const published = draft.status === "published";
+    const question = published
+      ? `למחוק את תיקיית העבודה של ${draft.id}? המקרה כבר נוסף לאתר ולא יימחק משם; יימחקו רק הטיוטה והעריכות.`
+      : `למחוק את הטיוטה ${draft.id}? כל מה שנכתב בה יימחק ואי אפשר לשחזר.`;
+    if (!window.confirm(question)) return;
+    try { await api("DELETE", `/api/drafts/${draft.id}`); say(`הטיוטה ${draft.id} נמחקה.`); } catch (error) { say(error.message); }
+    await load();
   }
   async function newDraft() { try { const { id } = await api("POST", "/api/drafts", {}); await openDraft(id); } catch (error) { say(error.message); renderHome(); } }
   async function openDraft(id) { state.draftId = id; state.step = 1; state.view = null; state.check = null; state.publishResult = null; state.job = null; await load(); }
@@ -97,7 +106,7 @@
 
   function renderDraft() {
     const body = state.step === 1 ? stepBrief() : state.step === 2 ? stepGenerate() : state.step === 3 ? stepReview() : stepPublish();
-    render(h("h2", {}, "מקרה " + state.draftId), stepNav(), body);
+    render(h("div", { class: "row" }, h("h2", {}, "מקרה " + state.draftId), h("button", { onclick: () => deleteDraft({ id: state.draftId, status: state.brief.meta.status }).then(() => { state.draftId = null; return load(); }) }, "מחק את הטיוטה הזו")), stepNav(), body);
   }
 
   function stepBrief() {

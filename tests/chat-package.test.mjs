@@ -154,7 +154,8 @@ function scratchRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-root-"));
   for (const dir of ["data/template", "data/cases", "data/source"]) fs.mkdirSync(path.join(root, dir), { recursive: true });
   for (const name of ["case-template.json", "clinical-simulation-case-template-v2-he.xlsx"]) fs.copyFileSync(path.join(repo, "data/template", name), path.join(root, "data/template", name));
-  fs.copyFileSync(path.join(repo, "data/cases/index.json"), path.join(root, "data/cases/index.json"));
+  const realIndex = JSON.parse(fs.readFileSync(path.join(repo, "data/cases/index.json"), "utf8"));
+  fs.writeFileSync(path.join(root, "data/cases/index.json"), JSON.stringify({ ...realIndex, cases: realIndex.cases.filter((entry) => ["CASE-001", "CASE-002", "CASE-003"].includes(entry.id)) }), "utf8");
   return root;
 }
 

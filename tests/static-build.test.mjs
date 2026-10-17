@@ -17,7 +17,8 @@ test("the built page has the application title, RTL Hebrew and relative asset pa
 test("each case is its own lazily loaded chunk, not part of the main script", () => {
   const main = assets.find((name) => /^index-.*\.js$/.test(name));
   assert.ok(main);
-  assert.equal(assets.filter((name) => /^case-\d+-.*\.js$/.test(name)).length, 3);
+  const catalogue = JSON.parse(fs.readFileSync(new URL("../data/cases/index.json", import.meta.url), "utf8"));
+  assert.equal(assets.filter((name) => /^case-\d+-.*\.js$/.test(name)).length, catalogue.cases.length, "one chunk per catalogued case");
   assert.doesNotMatch(read(main), /אבחנה ידועה למערכת/, "case facts must not be inlined in the main bundle");
 });
 

@@ -28,6 +28,15 @@
       "age": 44,
       "demographics": "ר׳ ג׳ · גבר · בן 44",
       "chiefComplaint": "כאב בצד שמאל של בית החזה"
+    },
+    {
+      "id": "CASE-004",
+      "file": "case-004.json",
+      "initials": "א.ק.",
+      "sex": "גבר",
+      "age": 70,
+      "demographics": "א.ק. · גבר · בן 70",
+      "chiefComplaint": "קשיי נשימה מחמיר בלילה"
     }
   ]
 }

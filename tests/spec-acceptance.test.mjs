@@ -27,9 +27,9 @@ test("case labels are selected from human-facing headers rather than technical I
   assert.match(data, /followupTests: \["בדיקה"\]/);
 });
 
-test("the three approved pilot cases are listed in the case catalogue, not hard-coded in logic", () => {
+test("the approved cases are listed in the case catalogue, not hard-coded in logic", () => {
   const catalogue = JSON.parse(fs.readFileSync(new URL("../data/cases/index.json", import.meta.url), "utf8"));
-  assert.deepEqual(catalogue.cases.map((entry) => entry.id), ["CASE-001", "CASE-002", "CASE-003"]);
+  assert.deepEqual(catalogue.cases.slice(0, 3).map((entry) => entry.id), ["CASE-001", "CASE-002", "CASE-003"], "the original approved cases stay first");
   for (const source of [page, data, respond, fs.readFileSync(new URL("../lib/session-store.ts", import.meta.url), "utf8")]) assert.doesNotMatch(source, /"CASE-0dd"/);
   assert.match(page, /מי מחכה לך במיון/);
   assert.match(page, /caseId/);

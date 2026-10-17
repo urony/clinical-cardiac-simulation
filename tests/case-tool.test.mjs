@@ -15,7 +15,9 @@ import { findPython, runXlsxTool } from "../tools/case-tool/python.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (rel) => JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
 const template = read("data/template/case-template.json");
-const catalogue = read("data/cases/index.json");
+// The publishing rules are tested against the three original cases, whatever else the project has by now.
+const fullCatalogue = read("data/cases/index.json");
+const catalogue = { ...fullCatalogue, cases: fullCatalogue.cases.filter((entry) => ["CASE-001", "CASE-002", "CASE-003"].includes(entry.id)) };
 const approvedCase = (n) => read(`data/cases/case-${n}.json`);
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -26,6 +28,14 @@ test("the three approved cases pass validation with no errors", () => {
   for (const n of ["001", "002", "003"]) {
     const { errors } = validateCase(approvedCase(n), template);
     assert.deepEqual(errors, [], `CASE-${n}`);
+  }
+});
+
+test("every case in the catalogue passes validation, including cases added later", () => {
+  const casesDir = path.join(root, "data/cases");
+  for (const entry of fullCatalogue.cases) {
+    const { errors } = validateCase(JSON.parse(fs.readFileSync(path.join(casesDir, entry.file), "utf8")), template, { chiefComplaint: entry.chiefComplaint });
+    assert.deepEqual(errors, [], entry.id);
   }
 });
 
@@ -192,7 +202,7 @@ test("round trip: a drafted workbook fails validation until approved, then passe
   assert.ok(fs.existsSync(path.join(scratch, "data", "cases", "case-004.json")));
   assert.ok(fs.existsSync(path.join(scratch, "data", "source", "CASE-004.approved.xlsx")));
   // the real data folder is untouched
-  assert.equal(read("data/cases/index.json").cases.length, 3);
+  assert.equal(read("data/cases/index.json").cases.length, fullCatalogue.cases.length, "the real catalogue is untouched");
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -213,7 +223,7 @@ test("next case id continues after the highest id; demographics use the right ge
   assert.equal(nextCaseId({ cases: [] }), "CASE-001");
   assert.equal(demographicsOf("מ׳ ר׳", "אישה", 64), "מ׳ ר׳ · אישה · בת 64");
   assert.equal(demographicsOf("א׳ ש׳", "גבר", 58), "א׳ ש׳ · גבר · בן 58");
-  for (const entry of catalogue.cases) assert.equal(demographicsOf(entry.initials, entry.sex, entry.age), entry.demographics, "matches the approved catalogue");
+  for (const entry of fullCatalogue.cases) assert.equal(demographicsOf(entry.initials, entry.sex, entry.age), entry.demographics, `${entry.id}: matches the catalogue`);
 });
 
 // ---------------------------------------------------------------------------------------------

@@ -404,3 +404,20 @@ test("the interface offers deleting a draft, with a confirmation", () => {
   assert.match(app, /"מחק את הטיוטה הזו"/);
   assert.match(app, /window\.confirm\(question\)/);
 });
+
+test("the case details offer sex as a choice, reject anything else, and the page links each error to where it is fixed", async () => {
+  const ctx = await startAdmin();
+  try {
+    const id = await createWithDraft(ctx);
+    const meta = (await ctx.call("GET", `/api/drafts/${id}/view`)).json.view.find((sheet) => sheet.sheet === "מטא_מקרה");
+    assert.deepEqual(meta.items.find((item) => item.id === "מין").choices, { "ערך": ["גבר", "אישה"] });
+    assert.deepEqual(meta.items.find((item) => item.id === "גיל").choices, {});
+    const edit = (value) => ctx.call("PATCH", `/api/drafts/${id}/entry`, { sheet: "מטא_מקרה", id: "מין", column: "ערך", value });
+    assert.equal((await edit("זכר")).status, 400);
+    assert.equal((await edit("אישה")).status, 200);
+    assert.equal((await edit("גבר")).status, 200);
+  } finally { await ctx.close(); }
+  const app = fs.readFileSync(path.join(repo, "tools/case-admin/public/app.js"), "utf8");
+  assert.match(app, /goToError/);
+  assert.match(app, /לחצו על שגיאה כדי לעבור/);
+});

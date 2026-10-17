@@ -234,7 +234,7 @@
   function itemCard(item) {
     const saved = h("span", { class: "saved" });
     const save = async (column, value) => { try { await api("PATCH", `/api/drafts/${state.draftId}/entry`, { sheet: state.sheet, id: item.id, column, value }); saved.textContent = "נשמר ✓"; } catch (error) { saved.textContent = error.message; } };
-    const choices = { "חשיבות במקרה": ["חיוני במקרה", "חשוב", "משלים", "בדרך כלל לא מרכזי"] };
+    const choices = { "חשיבות במקרה": ["חיוני במקרה", "חשוב", "משלים", "בדרך כלל לא מרכזי"], ...item.choices };
     const controls = item.columns.map((column) => {
       const editor = choices[column]
         ? h("select", { onchange: (event) => save(column, event.target.value) }, h("option", { value: "" }, "— בחרו —"), choices[column].map((option) => h("option", { value: option, selected: item.values[column] === option }, option)))
@@ -248,6 +248,15 @@
   }
 
   // ---- check and publish --------------------------------------------------------------------------------
+  /** The error text starts with the sheet it is about (or "מטא" for the case details); take the author there. */
+  async function goToError(line) {
+    const sheets = ["מטא_מקרה", "אנמנזה", "בדיקה_גופנית", "תוצאות_מספריות", "בדיקות_מיידיות", "בדיקות_המשך", "החלטות_וטיפול", "כללי_משוב"];
+    const sheet = line.startsWith("מטא") ? "מטא_מקרה" : sheets.find((name) => line.startsWith(name));
+    if (sheet) state.sheet = sheet;
+    state.filter = "all";
+    await go(3);
+  }
+
   function stepPublish() {
     const check = state.check;
     const complaint = h("input", { value: state.brief.meta.chiefComplaint ?? "", maxlength: "200" });
@@ -267,7 +276,7 @@
       h("div", { class: "row" }, h("button", { onclick: async () => { await api("PUT", `/api/drafts/${state.draftId}/brief`, { fields: state.brief.meta.fields, chiefComplaint: complaint.value }); state.brief = await api("GET", `/api/drafts/${state.draftId}`); state.check = await api("POST", `/api/drafts/${state.draftId}/check`, {}); renderDraft(); } }, "שמור ובדוק שוב")),
       h("h3", {}, "מצב"),
       check.blockers.length ? h("div", { class: "errors" }, h("b", {}, "מה חוסם את ההוספה:"), h("ul", {}, check.blockers.map((line) => h("li", {}, line)))) : h("div", { class: "ok-box" }, "הבדיקה עברה. אפשר להוסיף את המקרה."),
-      check.errorCount ? h("div", { class: "errors" }, h("b", {}, `שגיאות (${check.errorCount}; מוצגות עד 200):`), h("ul", {}, check.errors.slice(0, 60).map((line) => h("li", {}, line))), check.errorCount > 60 ? h("p", { class: "muted" }, "…ועוד. השתמשו בסינון \"רק פריטים ריקים\" בשלב 3.") : null) : null,
+      check.errorCount ? h("div", { class: "errors" }, h("b", {}, `שגיאות (${check.errorCount}). לחצו על שגיאה כדי לעבור למקום שבו מתקנים אותה:`), h("ul", {}, check.errors.slice(0, 60).map((line) => h("li", {}, h("button", { class: "link", onclick: () => goToError(line) }, line)))), check.errorCount > 60 ? h("p", { class: "muted" }, "…ועוד. השתמשו בסינון \"רק פריטים ריקים\" בשלב 3.") : null) : null,
       check.warnings.length ? h("div", { class: "banner" }, h("b", {}, "אזהרות:"), h("ul", {}, check.warnings.map((line) => h("li", {}, line)))) : null,
       check.unreviewed.length ? h("div", { class: "banner" }, h("b", {}, `${check.unreviewed.length} פריטים ש-ה-AI לא הייתה בטוחה בהם וטרם נבדקו:`),
         h("ul", {}, check.unreviewed.slice(0, 40).map((item) => h("li", {}, h("button", { class: "link", onclick: () => { state.sheet = item.sheet; state.filter = "flag"; go(3); } }, `${item.sheetTitle} · ${item.label}`)))),

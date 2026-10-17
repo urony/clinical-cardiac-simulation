@@ -2,7 +2,7 @@
 // to a chat assistant (ChatGPT, Claude, Gemini ...), talks the case through with it, and pastes the answers back.
 // This module builds that document and reads the pasted answers; nothing here calls any service.
 import { IMPORTANCE, PLACEHOLDER } from "./case-validation.mjs";
-import { SHEETS, SYSTEM, emptyFills, groupsOf, chunkSize } from "./draft.mjs";
+import { SHEETS, SYSTEM, emptyFills, groupsOf, chunkSize, normalizeMetaValue } from "./draft.mjs";
 import { unitOf } from "./workbook-json.mjs";
 
 const text = (value) => (value === null || value === undefined ? "" : String(value).trim());
@@ -122,7 +122,7 @@ export function importReplies({ template, fills, raw, caseId, replace = false })
     if (entries[id]?.edited && !replace) { result.keptEdited.push({ id, label: target.label }); continue; }
     entries[id] = {
       ...entries[id],
-      fields: { ...entries[id]?.fields, ...Object.fromEntries(target.columns.map((column) => [column, entry.fields[column].trim()])) },
+      fields: { ...entries[id]?.fields, ...Object.fromEntries(target.columns.map((column) => [column, target.spec.sheet === "מטא_מקרה" ? normalizeMetaValue(id, entry.fields[column]) : entry.fields[column].trim()])) },
       needsReview: entry.needsReview === true || entry.needsReview === "true", note: text(entry.note), reviewed: false, source: "chat",
     };
     delete entries[id].edited;

@@ -15,6 +15,9 @@ export const SHEET_TITLES = {
   "כללי_משוב": "כללי משוב",
 };
 
+/** Meta fields (by name) whose value must be one of a fixed set. */
+export const FIELD_CHOICES = { "מין": ["גבר", "אישה"] };
+
 /** Columns that are chosen from a fixed list instead of typed. */
 export const CHOICES = { "חשיבות במקרה": IMPORTANCE };
 
@@ -29,6 +32,7 @@ export function buildView(template, fills) {
           label: item.label,
           unit: spec.sheet === "תוצאות_מספריות" ? unitOf(template, item.id) : "",
           columns: group.columns,
+          choices: spec.sheet === "מטא_מקרה" && FIELD_CHOICES[item.id] ? { "ערך": FIELD_CHOICES[item.id] } : {},
           values: Object.fromEntries(group.columns.map((column) => [column, entry?.fields?.[column] ?? ""])),
           filled: group.columns.every((column) => Boolean(entry?.fields?.[column])),
           needsReview: Boolean(entry?.needsReview),
@@ -62,6 +66,7 @@ export function applyEdit(fills, { sheet, id, column, value, reviewed }) {
     if (!allowed.has(column)) throw new Error("עמודה לא ניתנת לעריכה");
     if (typeof value !== "string" || value.length > 4000) throw new Error("ערך לא תקין");
     if (CHOICES[column] && value !== "" && !CHOICES[column].includes(value)) throw new Error("ערך שאינו מהרשימה");
+    if (sheet === "מטא_מקרה" && FIELD_CHOICES[id] && value !== "" && !FIELD_CHOICES[id].includes(value)) throw new Error("ערך שאינו מהרשימה");
     entry.fields[column] = value;
     entry.edited = true;
   }

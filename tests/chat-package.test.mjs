@@ -197,3 +197,19 @@ test("the admin page offers the chat route first and explains it in three steps"
   for (const phrase of ["אפשרות א׳ (מומלצת): עם ה-AI שלך בצ'אט, בלי עלות API", "הורד מסמך עבודה ל-AI", "ייבא", "אפשרות ב׳: הפקה אוטומטית עם מפתח API"]) assert.ok(app.includes(phrase), phrase);
   assert.ok(app.indexOf("chatPanel(), h(\"div\"") > 0, "the chat panel comes before the API panel");
 });
+
+test("sex and age come out in the exact form the system needs, whatever words the assistant used", async () => {
+  const { normalizeMetaValue } = await import("../tools/case-tool/draft.mjs");
+  for (const [input, expected] of [["זכר", "גבר"], ["גבר", "גבר"], ["Male", "גבר"], ["נקבה", "אישה"], ["אשה", "אישה"], ["אישה.", "אישה"], ["female", "אישה"], ["לא ידוע", "לא ידוע"]]) assert.equal(normalizeMetaValue("מין", input), expected, input);
+  for (const [input, expected] of [["58", "58"], ["בן 58", "58"], ["בת 64", "64"], ["58 שנים", "58"], ["גיל 44", "44"], ["כ-58", "כ-58"], ["58 ומשהו", "58 ומשהו"]]) assert.equal(normalizeMetaValue("גיל", input), expected, input);
+  assert.equal(normalizeMetaValue("אבחנה ידועה למערכת", " טקסט "), "טקסט", "other fields are only trimmed");
+});
+
+test("a pasted answer that says זכר is accepted as גבר and the case then validates", () => {
+  const group = chatGroups(template).find((item) => item.spec.sheet === "מטא_מקרה");
+  const answer = JSON.parse(answerFor(group).split("```json")[1].split("```")[0]);
+  for (const item of answer.items) { if (item.id === "מין") item.fields["ערך"] = "זכר"; if (item.id === "גיל") item.fields["ערך"] = "בן 58"; }
+  const imported = importReplies({ template, fills: null, raw: "```json\n" + JSON.stringify(answer) + "\n```", caseId: "CASE-004" });
+  assert.equal(imported.fills.sheets["מטא_מקרה"]["מין"].fields["ערך"], "גבר");
+  assert.equal(imported.fills.sheets["מטא_מקרה"]["גיל"].fields["ערך"], "58");
+});

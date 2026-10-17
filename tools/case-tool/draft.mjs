@@ -135,7 +135,7 @@ export async function draftCase({ brief, template, caseId, complete, onProgress 
           for (const entry of parseItems(raw)) {
             const problem = validEntry(entry, specForGroup, allowed);
             if (problem) { if (allowed.has(entry?.id)) lastProblem.set(entry.id, problem); continue; }
-            entries[entry.id] = { fields: Object.fromEntries(group.columns.map((column) => [column, entry.fields[column].trim()])), needsReview: Boolean(entry.needsReview), note: text(entry.note) };
+            entries[entry.id] = { fields: Object.fromEntries(group.columns.map((column) => [column, spec.sheet === "מטא_מקרה" ? normalizeMetaValue(entry.id, entry.fields[column]) : entry.fields[column].trim()])), needsReview: Boolean(entry.needsReview), note: text(entry.note) };
           }
           todo = todo.filter((item) => !entries[item.id]);
         }
@@ -164,4 +164,21 @@ export function emptyFills(template, caseId, now = () => new Date()) {
   }
   fills.sheets["מטא_מקרה"] = { "שיוך למסד המחלות": { fields: { "ערך": "אין שיוך במסד הכללי (מקרה חדש)" }, needsReview: false, note: "" } };
   return fills;
+}
+
+const SEX_WORDS = { "גבר": "גבר", "זכר": "גבר", "male": "גבר", "man": "גבר", "m": "גבר", "אישה": "אישה", "אשה": "אישה", "נקבה": "אישה", "female": "אישה", "woman": "אישה", "f": "אישה" };
+
+/**
+ * Values the system needs in one exact form are brought to it when they clearly mean the same thing:
+ * sex as "גבר"/"אישה" (an assistant may write "זכר"/"נקבה"), age as plain digits ("בן 58" -> "58").
+ * Anything unclear is left as it is, and validation then asks the author to fix it.
+ */
+export function normalizeMetaValue(field, value) {
+  const raw = text(value);
+  if (field === "מין") return SEX_WORDS[raw.toLowerCase().replace(/[.,]/g, "")] ?? raw;
+  if (field === "גיל") {
+    const digits = raw.match(/^(?:בן|בת|גיל)?\s*(\d{1,3})(?:\s*(?:שנים|שנה|שנות|years?))?$/i);
+    return digits ? digits[1] : raw;
+  }
+  return raw;
 }

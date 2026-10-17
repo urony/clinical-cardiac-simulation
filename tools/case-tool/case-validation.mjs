@@ -16,6 +16,8 @@ export const PHASES = {
   "בדיקות_המשך": { required: ["תוצאה קבועה", "השפעה על החשיבה", "זמינות", "היגיון למשוב"] },
 };
 const BASE_ID = "מזהה רכיב בסיס";
+// A case may add its own items (ids "X-..."), on top of the template's fixed list.
+const EXTRA_BASE_ID = { "אנמנזה": /^X-AN-\d{3}$/, "בדיקה_גופנית": /^X-PE-\d{3}$/, "בדיקות_מיידיות": /^X-IT-\d{3}$/, "בדיקות_המשך": /^X-FT-\d{3}$/ };
 const ENTRY_ID = "מזהה ערך בתיק";
 
 const text = (value) => (value === null || value === undefined ? "" : String(value).trim());
@@ -73,6 +75,7 @@ export function validateCase(file, template, options = {}) {
 
   // --- phase sheets (anamnesis, examination, tests) -----------------------------------------------
   const importantIds = new Set();
+  const extraTests = [];
   for (const [sheet, spec] of Object.entries(PHASES)) {
     const rows = table(file, sheet);
     const expected = new Set((table(template, sheet) ?? []).map((row) => text(row[BASE_ID])).filter(Boolean));
@@ -81,11 +84,13 @@ export function validateCase(file, template, options = {}) {
       const baseId = text(row[BASE_ID]);
       seen.set(baseId, (seen.get(baseId) ?? 0) + 1);
       const label = `${sheet} ${baseId || "(ללא מזהה)"}`;
-      if (!expected.has(baseId)) error(`${label}: מזהה בסיס שאינו בתבנית`);
+      const isExtra = EXTRA_BASE_ID[sheet]?.test(baseId) ?? false;
+      if (!expected.has(baseId) && !isExtra) error(`${label}: מזהה בסיס שאינו בתבנית`);
       if (caseId && !text(row[ENTRY_ID]).startsWith(`${caseId}-`)) error(`${label}: מזהה הערך בתיק "${text(row[ENTRY_ID])}" אינו מתחיל ב-${caseId}-`);
       if (text(row["סטטוס"]) !== APPROVED) error(`${label}: סטטוס "${text(row["סטטוס"])}" (נדרש "${APPROVED}")`);
       if (!IMPORTANCE.includes(text(row["חשיבות במקרה"]))) error(`${label}: חשיבות לא תקינה "${text(row["חשיבות במקרה"])}"`);
       for (const column of spec.required) if (!text(row[column])) error(`${label}: "${column}" ריק`);
+      if (isExtra && sheet === "בדיקות_מיידיות") extraTests.push(baseId);
       if (sheet === "אנמנזה" && diagnosis.length >= 4 && normalise(row["תשובת המטופל"]).includes(diagnosis)) warnings.push(`${label}: תשובת המטופל כוללת את שם האבחנה`);
     }
     for (const id of expected) if (!seen.has(id)) error(`${sheet}: חסר מזהה ${id}`);
@@ -105,6 +110,13 @@ export function validateCase(file, template, options = {}) {
     if (text(row["ערך"]) === "") error(`${label}: ערך ריק`);
     if (text(row["חובת הצגה"]) === "כן" && !text(row["טווח ייחוס"])) warnings.push(`${label}: חובת הצגה "כן" ללא טווח ייחוס`);
     if (text(row["סטטוס"]) !== APPROVED) error(`${label}: סטטוס "${text(row["סטטוס"])}"`);
+  }
+
+  for (const testId of extraTests) {
+    const row = (table(file, "בדיקות_מיידיות") ?? []).find((item) => text(item[BASE_ID]) === testId);
+    const hasNumeric = numeric.some((item) => text(item["מזהה בדיקה"]) === testId);
+    const shown = text(row?.["תוצאה להצגה"]);
+    if (!hasNumeric && (!shown || /^נוצר אוטומטית/.test(shown))) error(`בדיקות_מיידיות ${testId}: לבדיקה נוספת ללא תוצאות מספריות חייבת להיות "תוצאה להצגה"`);
   }
 
   // --- decisions and feedback rules ---------------------------------------------------------------------

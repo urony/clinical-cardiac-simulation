@@ -87,6 +87,8 @@ def fill(template, fills_path, out):
         key_col = cols[KEYS[sheet]]
         rows = {str(ws.cell(r, key_col).value).strip(): r for r in range(start + 1, ws.max_row + 1) if ws.cell(r, key_col).value}
         for item_id, entry in entries.items():
+            if entry.get("extra"):
+                continue  # extra items are appended below from fills["extraRows"]
             if item_id not in rows:
                 raise SystemExit(f"{sheet}: id not in template: {item_id}")
             for column, value in entry["fields"].items():
@@ -97,6 +99,23 @@ def fill(template, fills_path, out):
                 cell.fill = REVIEW_FILL if entry.get("needsReview") else AI_FILL
             if entry.get("needsReview"):
                 review.append((sheet, item_id, entry.get("note", "")))
+    # Extra items of the case: rows prepared by the JSON side, appended below the template's rows.
+    for sheet, extra_rows in fills.get("extraRows", {}).items():
+        ws = wb[sheet]
+        start, cols = header_row(ws)
+        key_col = cols[KEYS[sheet]]
+        last = max(r for r in range(start + 1, ws.max_row + 1) if ws.cell(r, key_col).value)
+        for offset, row in enumerate(extra_rows, start=1):
+            target = last + offset
+            for column, position in cols.items():
+                cell = ws.cell(target, position)
+                cell.value = row.get(column)
+                source = ws.cell(last, position)
+                cell._style = source._style
+                if cell.value not in (None, ""):
+                    cell.fill = AI_FILL
+            review.append((sheet, row.get(KEYS[sheet]) or row.get("מזהה ערך בתיק"), "פריט נוסף של המקרה"))
+
     # Explain the colours and list what the author must look at first.
     if "טיוטת_AI" in wb.sheetnames:
         del wb["טיוטת_AI"]

@@ -20,8 +20,8 @@ import { draftCase, emptyFills, planDraft } from "../case-tool/draft.mjs";
 import { buildChatPackage, importReplies } from "../case-tool/chat-package.mjs";
 import { applyPublish, nextCaseId, planPublish } from "../case-tool/publish.mjs";
 import { findPython, runXlsxTool } from "../case-tool/python.mjs";
-import { applyEdit, buildView, unreviewedItems } from "../case-tool/view.mjs";
-import { applyFillsToTemplate } from "../case-tool/workbook-json.mjs";
+import { addExtra, applyEdit, buildView, removeExtra, unreviewedItems } from "../case-tool/view.mjs";
+import { applyFillsToTemplate, buildExtraRows } from "../case-tool/workbook-json.mjs";
 import { demoComplete } from "./demo-model.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -265,10 +265,28 @@ export function createAdminServer(options = {}) {
 
   route("PATCH", "/api/drafts/(CASE-\\d+)/entry", async (body, [id]) => {
     const fills = loadFills(id);
-    try { applyEdit(fills, body); } catch (error) { throw new HttpError(400, error.message); }
+    try { applyEdit(fills, body, { template: template() }); } catch (error) { throw new HttpError(400, error.message); }
     saveFills(id, fills);
     saveMeta(id, {});
     return { saved: true };
+  });
+
+  // Items the case adds on top of the template's list (for example a urine culture in a kidney case).
+  route("POST", "/api/drafts/(CASE-\\d+)/extra", async (body, [id]) => {
+    const fills = loadFills(id);
+    let newId;
+    try { newId = addExtra(fills, body); } catch (error) { throw new HttpError(400, error.message); }
+    saveFills(id, fills);
+    saveMeta(id, {});
+    return { id: newId };
+  });
+
+  route("DELETE", "/api/drafts/(CASE-\\d+)/extra", async (body, [id]) => {
+    const fills = loadFills(id);
+    try { removeExtra(fills, body); } catch (error) { throw new HttpError(400, error.message); }
+    saveFills(id, fills);
+    saveMeta(id, {});
+    return { deleted: true };
   });
 
   route("POST", "/api/drafts/(CASE-\\d+)/check", async (_body, [id]) => {
@@ -290,7 +308,10 @@ export function createAdminServer(options = {}) {
       const out = fs.mkdtempSync(path.join(os.tmpdir(), "case-admin-"));
       const draftXlsx = path.join(out, `${id}-draft.xlsx`);
       workbookPath = path.join(caseDir(id), `${id.toLowerCase()}-patient-database-he.xlsx`);
-      runXlsxTool(["fill", templateXlsx, path.join(caseDir(id), "fills.json"), draftXlsx]);
+      // The Excel filler appends exactly the extra rows computed here, so both paths give the same case.
+      const fillsForExcel = path.join(out, "fills.json");
+      fs.writeFileSync(fillsForExcel, JSON.stringify({ ...fills, extraRows: buildExtraRows(t, fills) }), "utf8");
+      runXlsxTool(["fill", templateXlsx, fillsForExcel, draftXlsx]);
       runXlsxTool(["approve", draftXlsx, workbookPath]);
       excel = path.basename(workbookPath);
     }

@@ -40,7 +40,7 @@ test("the work document has the instructions, the rules, the format, the brief a
   assert.ok(document.includes("תיאור ייחודי 12345"), "the author's brief is included");
   const groups = chatGroups(template);
   assert.equal(groups.length, planDraft(template).calls, "the same number of groups as automatic calls");
-  assert.equal((document.match(/^### קבוצה \d+ מתוך \d+:/gm) ?? []).length, groups.length);
+  assert.equal((document.match(/^### קבוצה \d+ מתוך \d+:/gm) ?? []).length, groups.length + 1, "the base groups plus the group for additional items");
   const ids = groups.flatMap((group) => group.items.map((item) => item.id));
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.length > 240);

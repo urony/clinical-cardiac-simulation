@@ -203,7 +203,7 @@
     return h("div", { class: "panel" },
       h("h3", {}, "אפשרות א׳ (מומלצת): עם ה-AI שלך בצ'אט, בלי עלות API"),
       h("p", {}, "ה-AI שאתם כבר עובדים איתו (ChatGPT, Claude, Gemini ועוד) יכין את המקרה, ואתם מדברים איתו חופשי."),
-      h("ol", {}, h("li", {}, "הורידו את מסמך העבודה והעלו אותו לצ'אט, עם ההוראה: ״קרא את המסמך ובצע את ההוראות בו״."), h("li", {}, "ספרו על המקרה. כשה-AI שאל מספיק, כתבו ״התחל״ ואחר כך ״המשך״ אחרי כל קבוצה (15 קבוצות)."), h("li", {}, "הדביקו כאן את התשובות שלו ולחצו ״ייבא״. אפשר לעשות זאת קבוצה אחרי קבוצה או הכול ביחד.")),
+      h("ol", {}, h("li", {}, "הורידו את מסמך העבודה והעלו אותו לצ'אט, עם ההוראה: ״קרא את המסמך ובצע את ההוראות בו״."), h("li", {}, "ספרו על המקרה. כשה-AI שאל מספיק, כתבו ״התחל״ ואחר כך ״המשך״ אחרי כל קבוצה (16 קבוצות, האחרונה היא פריטים נוספים שהמקרה דורש)."), h("li", {}, "הדביקו כאן את התשובות שלו ולחצו ״ייבא״. אפשר לעשות זאת קבוצה אחרי קבוצה או הכול ביחד.")),
       h("p", {}, h("button", { class: "primary", onclick: download }, "הורד מסמך עבודה ל-AI")),
       area, h("div", { class: "row" }, h("span", { class: "muted" }, "או העלו קובץ טקסט:"), file), h("p", {}, h("button", { onclick: doImport }, "ייבא")), result);
   }
@@ -228,7 +228,31 @@
       h("p", { class: "muted" }, current.guide),
       h("p", { class: "banner" }, h("b", {}, "מה זה פריט צהוב? "), "פריט שה-AI כתבה בלי שנמסר לה מידע עליו בתיאור, או שהיא לא בטוחה בו. קראו אותו, תקנו אם צריך, וסמנו \"בדקתי\". פריט ללא צבע (כחול דק) נכתב לפי התיאור שלכם, אבל גם אותו כדאי לקרוא."),
       items.length ? items.map(itemCard) : h("p", { class: "ok-box" }, "אין פריטים להצגה בסינון הזה."),
+      current.extrasAllowed ? extraForm(current) : null,
       h("p", {}, h("button", { class: "primary", onclick: () => go(4) }, "המשך לבדיקה והוספה")));
+  }
+
+  /** Add an item the template does not have (for example a urine culture in a kidney case). */
+  function extraForm(sheet) {
+    const numeric = sheet.sheet === "תוצאות_מספריות";
+    const name = h("input", { maxlength: "120", placeholder: numeric ? "שם המדד, למשל: ספירת מושבות" : "שם הפריט, למשל: תרבית שתן" });
+    const unit = numeric ? h("input", { maxlength: "30", placeholder: "יחידה, למשל: CFU/mL" }) : null;
+    const test = numeric ? h("select", {}, (sheet.testOptions ?? []).map((option) => h("option", { value: option.id }, option.label))) : null;
+    const status = h("span", { class: "saved" });
+    const add = async () => {
+      try {
+        await api("POST", `/api/drafts/${state.draftId}/extra`, { sheet: sheet.sheet, label: name.value, testId: test?.value, unit: unit?.value });
+        state.view = await api("GET", `/api/drafts/${state.draftId}/view`); renderDraft();
+      } catch (error) { status.textContent = error.message; }
+    };
+    const blocked = numeric && !(sheet.testOptions ?? []).length;
+    return h("div", { class: "panel" }, h("h4", {}, numeric ? "+ הוסף תוצאה מספרית לבדיקה נוספת" : "+ הוסף פריט שאין ברשימה"),
+      h("p", { class: "muted" }, numeric ? "תוצאה מספרית שייכת לבדיקה נוספת של המקרה. הוסיפו קודם את הבדיקה בלשונית ״בדיקות בסיסיות״." : "פריט שרק המקרה הזה צריך. אחרי ההוספה ממלאים את השדות שלו כמו כל פריט אחר."),
+      blocked ? null : h("div", { class: "row" }, test ? h("label", { class: "field" }, "בדיקה", test) : null, name, unit, h("button", { class: "primary", onclick: add }, "הוסף"), status));
+  }
+  async function removeExtraItem(item) {
+    if (!window.confirm(`למחוק את הפריט "${item.label}"?${state.sheet === "בדיקות_מיידיות" ? " גם התוצאות המספריות שלו יימחקו." : ""}`)) return;
+    try { await api("DELETE", `/api/drafts/${state.draftId}/extra`, { sheet: state.sheet, id: item.id }); state.view = await api("GET", `/api/drafts/${state.draftId}/view`); renderDraft(); } catch (error) { say(error.message); renderDraft(); }
   }
 
   function itemCard(item) {
@@ -243,7 +267,7 @@
     });
     const review = item.needsReview ? h("label", { class: "row" }, h("input", { type: "checkbox", style: "width:auto", checked: item.reviewed, onchange: async (event) => { await api("PATCH", `/api/drafts/${state.draftId}/entry`, { sheet: state.sheet, id: item.id, reviewed: event.target.checked }); state.view = await api("GET", `/api/drafts/${state.draftId}/view`); renderDraft(); } }), "בדקתי את הפריט הזה") : null;
     return h("div", { class: "item" + (item.needsReview && !item.reviewed ? " flagged" : "") + (item.filled ? "" : " empty") },
-      h("h4", {}, item.label, item.unit ? h("span", { class: "muted" }, `(${item.unit})`) : null, item.needsReview ? h("span", { class: "tag flag" }, item.reviewed ? "נבדק" : "ה-AI לא בטוחה, נא לבדוק") : null, h("small", { class: "muted" }, item.id)),
+      h("h4", {}, item.label, item.unit ? h("span", { class: "muted" }, `(${item.unit})`) : null, item.needsReview ? h("span", { class: "tag flag" }, item.reviewed ? "נבדק" : "ה-AI לא בטוחה, נא לבדוק") : null, h("small", { class: "muted" }, item.id), item.extra ? h("span", { class: "tag" }, "פריט נוסף של המקרה") : null, item.extra ? h("button", { onclick: () => removeExtraItem(item) }, "מחק פריט") : null),
       item.note ? h("div", { class: "note" }, "הערת ה-AI: " + item.note) : null, controls, review, saved);
   }
 

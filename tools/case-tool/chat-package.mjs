@@ -3,7 +3,8 @@
 // This module builds that document and reads the pasted answers; nothing here calls any service.
 import { IMPORTANCE, PLACEHOLDER } from "./case-validation.mjs";
 import { SHEETS, SYSTEM, emptyFills, groupsOf, chunkSize, normalizeMetaValue } from "./draft.mjs";
-import { unitOf } from "./workbook-json.mjs";
+import { EXTRA, unitOf } from "./workbook-json.mjs";
+import { addExtra } from "./view.mjs";
 
 const text = (value) => (value === null || value === undefined ? "" : String(value).trim());
 
@@ -36,8 +37,26 @@ const EXAMPLE = `\`\`\`json
 \`\`\``;
 
 /** One Markdown document: instructions for the assistant, the case so far, and every group of items to produce. */
+const EXTRAS_EXAMPLE = `\`\`\`json
+{
+  "extras": [
+    {
+      "sheet": "בדיקות_מיידיות", "label": "תרבית שתן",
+      "fields": { "תוצאה להצגה": "…", "פרשנות במקרה": "…", "חשיבות במקרה": "חשוב", "היגיון למשוב": "…" },
+      "needsReview": true, "note": ""
+    },
+    {
+      "sheet": "תוצאות_מספריות", "test": "תרבית שתן", "label": "ספירת מושבות", "unit": "CFU/mL",
+      "fields": { "ערך": "…", "טווח ייחוס": "…", "פרשנות במקרה": "…" },
+      "needsReview": true, "note": ""
+    }
+  ]
+}
+\`\`\``;
+
 export function buildChatPackage({ template, brief = "", caseId }) {
   const groups = chatGroups(template);
+  const total = groups.length + 1;
   const lines = [];
   lines.push(`# מסמך עבודה ל-AI: יצירת המקרה ${caseId} בסימולטור`, "");
   lines.push("## למחבר: איך משתמשים בזה", "",
@@ -53,12 +72,17 @@ export function buildChatPackage({ template, brief = "", caseId }) {
     "לכל פריט ברשימת הקבוצה החזר פריט אחד, עם אותם `id`. בתוך `fields` רק העמודות שהקבוצה מבקשת (השמות בדיוק כפי שהם). `needsReview` הוא `true` לכל פריט שלא נאמר עליו כלום בשיחה והמצאת אותו, או שאינך בטוח בו, וב-`note` במה מדובר. `חשיבות במקרה` חייבת להיות אחד מהערכים: " + IMPORTANCE.join(" / ") + ".", "",
     EXAMPLE, "");
   if (text(brief)) lines.push("---", "", "## מה המחבר כבר כתב על המקרה", "", text(brief), "");
-  lines.push("---", "", `## רשימת הקבוצות להפקה (${groups.length} קבוצות)`, "");
+  lines.push("---", "", `## רשימת הקבוצות להפקה (${total} קבוצות)`, "");
   groups.forEach((group, index) => {
-    lines.push(`### קבוצה ${index + 1} מתוך ${groups.length}: ${group.spec.sheet.replace(/_/g, " ")} (${group.items.length} פריטים)`, "",
+    lines.push(`### קבוצה ${index + 1} מתוך ${total}: ${group.spec.sheet.replace(/_/g, " ")} (${group.items.length} פריטים)`, "",
       group.spec.guide, "", `העמודות למילוי: ${group.columns.join(", ")}`, "",
       "רשימת הפריטים (זה קלט, לא הפלט; ה-`topic` הוא שם הפריט):", "", "```json", JSON.stringify(group.items, null, 1), "```", "");
   });
+  lines.push(`### קבוצה ${total} מתוך ${total}: פריטים נוספים שהמקרה הזה דורש`, "",
+    "הרשימות שלמעלה זהות לכל מקרה. אם המקרה הזה דורש שאלות, רכיבי בדיקה גופנית, בדיקות או בדיקות המשך **שאינם ברשימות** (למשל במקרה כליה: תרבית שתן, ביופסיית כליה), הצע אותם עכשיו. הצע רק מה שחשוב באמת לתמונה הקלינית (עד 12 פריטים), ואל תחזור על פריט שכבר קיים ברשימות. אם אין צורך, החזר `{ \"extras\": [] }`.", "",
+    "לכל פריט: `sheet` (אחד מ: אנמנזה, בדיקה_גופנית, בדיקות_מיידיות, בדיקות_המשך, תוצאות_מספריות), `label` (שם הפריט), ובתוך `fields` את העמודות לפי הטבלה:", "",
+    ...Object.entries(EXTRA).map(([sheet, config]) => `- ${sheet}: ${config.columns.join(", ")}${sheet === "בדיקות_מיידיות" ? " (את ״תוצאה להצגה״ כותבים רק אם לבדיקה אין תוצאות מספריות)" : ""}${sheet === "תוצאות_מספריות" ? "; בנוסף `test` (שם הבדיקה הנוספת בדיוק כפי שהצעת) ו-`unit` (יחידה)" : ""}`), "",
+    EXTRAS_EXAMPLE, "");
   return lines.join("\n");
 }
 
@@ -99,7 +123,8 @@ export function extractJsonBlocks(raw) {
 export function importReplies({ template, fills, raw, caseId, replace = false }) {
   const blocks = extractJsonBlocks(String(raw ?? ""));
   const items = blocks.flatMap((block) => (Array.isArray(block) ? block : Array.isArray(block?.items) ? block.items : []));
-  if (!items.length) throw new Error("לא נמצא בטקסט שהודבק JSON עם פריטים. הדביקו את בלוקי ה-JSON שה-AI נתן.");
+  const extras = blocks.flatMap((block) => (Array.isArray(block?.extras) ? block.extras : []));
+  if (!items.length && !extras.length) throw new Error("לא נמצא בטקסט שהודבק JSON עם פריטים. הדביקו את בלוקי ה-JSON שה-AI נתן.");
 
   const known = new Map();
   for (const spec of SHEETS) for (const group of groupsOf(template, spec)) for (const item of group.items) if (!known.has(item.id)) known.set(item.id, { spec, columns: group.columns, label: item.label });
@@ -128,5 +153,44 @@ export function importReplies({ template, fills, raw, caseId, replace = false })
     delete entries[id].edited;
     result.accepted.push(id);
   }
+  importExtras(result, extras, replace);
   return result;
+}
+
+const SHEET_ORDER = ["בדיקות_מיידיות", "תוצאות_מספריות"];
+
+/** Items the case adds to the template's list. A sheet's own items first, numeric results last (they refer to a test). */
+function importExtras(result, extras, replace) {
+  const ordered = [...extras].sort((a, b) => SHEET_ORDER.indexOf(a?.sheet) - SHEET_ORDER.indexOf(b?.sheet));
+  for (const extra of ordered) {
+    const sheet = text(extra?.sheet);
+    const label = text(extra?.label);
+    const reject = (reason) => result.rejected.push({ id: label || "(ללא שם)", label, reason });
+    const config = EXTRA[sheet];
+    if (!config) { reject("גיליון לא מוכר לפריט נוסף"); continue; }
+    if (!label) { reject("חסר שם לפריט"); continue; }
+    const numeric = sheet === "תוצאות_מספריות";
+    const required = config.columns.filter((column) => !(sheet === "בדיקות_מיידיות" && column === "תוצאה להצגה"));
+    const bad = required.find((column) => typeof extra.fields?.[column] !== "string" || !extra.fields[column].trim());
+    if (bad) { reject(`העמודה "${bad}" חסרה או ריקה`); continue; }
+    const placeholder = Object.values(extra.fields ?? {}).find((value) => typeof value === "string" && PLACEHOLDER.test(value));
+    if (placeholder) { reject("יש בפריט הוראת תבנית שלא הוחלפה"); continue; }
+    if (config.columns.includes("חשיבות במקרה") && !IMPORTANCE.includes(text(extra.fields["חשיבות במקרה"]))) { reject("חשיבות לא תקינה"); continue; }
+    const entries = (result.fills.sheets[sheet] ??= {});
+    let testId;
+    if (numeric) {
+      const tests = result.fills.sheets["בדיקות_מיידיות"] ?? {};
+      testId = Object.keys(tests).find((id) => tests[id].extra && (id === text(extra.test) || tests[id].label === text(extra.test)));
+      if (!testId) { reject("תוצאה מספרית שייכת לבדיקה נוספת, ולא נמצאה בדיקה בשם הזה"); continue; }
+    }
+    let id = Object.keys(entries).find((key) => entries[key].extra && entries[key].label === label && (!numeric || entries[key].testId === testId));
+    if (id && entries[id].edited && !replace) { result.keptEdited.push({ id, label }); continue; }
+    if (!id) { try { id = addExtra(result.fills, { sheet, label, testId, unit: extra.unit }); } catch (error) { reject(error.message); continue; } }
+    const entry = entries[id];
+    entry.fields = { ...entry.fields, ...Object.fromEntries(Object.entries(extra.fields).filter(([column, value]) => config.columns.includes(column) && typeof value === "string" && value.trim()).map(([column, value]) => [column, value.trim()])) };
+    if (numeric) entry.unit = text(extra.unit).slice(0, 30);
+    Object.assign(entry, { needsReview: extra.needsReview === true || extra.needsReview === "true", note: text(extra.note), reviewed: false, source: "chat" });
+    delete entry.edited;
+    result.accepted.push(id);
+  }
 }

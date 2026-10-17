@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { availableCases, catalogEntry, type CaseId } from "../lib/case-catalog";
 import { loadCase } from "../lib/case-loader";
 import { generateFeedback } from "../lib/feedback";
+import { DEFAULT_PROVIDER_ID } from "../lib/providers";
 import { loadSession, saveSession } from "../lib/session-store";
 import { runSimulationStep, type SimulationRequest } from "../lib/simulation";
 
@@ -128,7 +129,7 @@ export default function Home() {
   function storeActions(items: Action[]) { setActions((old) => [...old, ...items.filter((item) => !old.some((existing) => existing.id === item.id && existing.area === item.area))]); }
 
   async function step(request: SimulationRequest) {
-    return runSimulationStep({ config: { apiKey: key }, entry: catalogEntry(caseId), caseFile: await loadCase(caseId) }, request);
+    return runSimulationStep({ config: { providerId: DEFAULT_PROVIDER_ID, apiKey: key }, entry: catalogEntry(caseId), caseFile: await loadCase(caseId) }, request);
   }
   async function ask(event: FormEvent) {
     event.preventDefault(); if (!question.trim() || !key) return;
@@ -183,7 +184,7 @@ export default function Home() {
     if (!key) { setError("יש להכניס מפתח API כדי להפיק משוב."); return false; }
     setBusy(true); setError(""); setPrintRequested(printAfter);
     try {
-      setFeedback(await generateFeedback({ apiKey: key }, await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
+      setFeedback(await generateFeedback({ providerId: DEFAULT_PROVIDER_ID, apiKey: key }, await loadCase(caseId), { caseId, stage, actions, results, rationale1, rationale2, form, transcript, reportType }));
       return true;
     } catch (caught) { setPrintRequested(false); setError(caught instanceof Error ? caught.message : "לא ניתן להפיק משוב."); }
     finally { setBusy(false); }

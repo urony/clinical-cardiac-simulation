@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "_note": "Provider settings live here, not in the simulation logic. `status`: 'in-use' = the path the app used before this registry existed; 'untested' = request shape built from public documentation, never run against the real service (CORS preflight to the endpoint was checked on 2026-10-17, no key used). Model names are recommendations a teacher can change; they are not pedagogically or clinically validated.",
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "protocol": "openai-responses",
+      "baseUrl": "https://api.openai.com/v1",
+      "supportsReasoningEffort": true,
+      "structuredOutput": "json_schema",
+      "defaultModels": { "classifier": "gpt-5.6", "response": "gpt-5-mini", "feedback": "gpt-5-mini" },
+      "status": "in-use",
+      "notes": "A free-plan key reportedly works only with one specific model (per the API-key wizard); the teacher must choose it."
+    },
+    {
+      "id": "xai",
+      "name": "xAI (Grok)",
+      "protocol": "openai-responses",
+      "baseUrl": "https://api.x.ai/v1",
+      "supportsReasoningEffort": false,
+      "structuredOutput": "json_schema",
+      "defaultModels": { "classifier": "grok-4.7", "response": "grok-4.7", "feedback": "grok-4.7" },
+      "status": "untested",
+      "notes": "Documentation names the Responses API as the preferred interface."
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "protocol": "openai-chat",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "maxTokensParam": "max_tokens",
+      "structuredOutput": "json_object",
+      "defaultModels": { "classifier": "openai/gpt-oss-120b", "response": "openai/gpt-oss-120b", "feedback": "openai/gpt-oss-120b" },
+      "status": "untested",
+      "notes": "Not xAI's Grok. Free plan exists; limits unverified."
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "protocol": "openai-chat",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "maxTokensParam": "max_tokens",
+      "structuredOutput": "json_object",
+      "defaultModels": { "classifier": "gemini-flash-latest", "response": "gemini-flash-latest", "feedback": "gemini-flash-latest" },
+      "status": "untested",
+      "notes": "OpenAI-compatible endpoint. Compatibility with this app's structured output is unverified. Free-tier content may be used by Google to improve products."
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "protocol": "openai-chat",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "maxTokensParam": "max_tokens",
+      "structuredOutput": "json_object",
+      "defaultModels": { "classifier": "openrouter/free", "response": "openrouter/free", "feedback": "openrouter/free" },
+      "status": "untested",
+      "notes": "Routes to many models; free models have a low daily request limit."
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral AI",
+      "protocol": "openai-chat",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "maxTokensParam": "max_tokens",
+      "structuredOutput": "json_object",
+      "defaultModels": { "classifier": "mistral-small-latest", "response": "mistral-small-latest", "feedback": "mistral-small-latest" },
+      "status": "untested",
+      "notes": "Free experiment plan may use requests for model training and requires phone verification."
+    }
+  ]
+}

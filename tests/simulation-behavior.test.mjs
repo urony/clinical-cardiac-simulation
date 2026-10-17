@@ -12,7 +12,7 @@ const { phaseItems } = lib.caseData;
 
 const realFetch = globalThis.fetch;
 const FAKE_KEY = "test-key-not-real";
-const config = { apiKey: FAKE_KEY };
+const config = { providerId: "openai", apiKey: FAKE_KEY };
 
 function context(caseId = "CASE-001", overrides = {}) {
   const entry = availableCases.find((item) => item.id === caseId);
@@ -43,7 +43,7 @@ test("an unknown case id is not valid, so it can never reach the logic", () => {
 
 test("missing key fails with 503 and never calls the provider", async () => {
   const calls = fakeProvider(["unused"]);
-  await assert.rejects(runSimulationStep(context("CASE-001", { config: { apiKey: "" } }), { phase: "anamnesis", question: "מה מפריע לך?" }), (error) => error.status === 503);
+  await assert.rejects(runSimulationStep(context("CASE-001", { config: { providerId: "openai", apiKey: "" } }), { phase: "anamnesis", question: "מה מפריע לך?" }), (error) => error.status === 503);
   assert.equal(calls.length, 0);
 });
 
@@ -139,7 +139,7 @@ test("malformed structured feedback falls back to a second, plain-text call", as
 
 test("feedback without a key fails with 503 and makes no call", async () => {
   const calls = fakeProvider(["unused"]);
-  await assert.rejects(generateFeedback({ apiKey: "" }, context().caseFile, {}), (error) => error.status === 503);
+  await assert.rejects(generateFeedback({ providerId: "openai", apiKey: "" }, context().caseFile, {}), (error) => error.status === 503);
   assert.equal(calls.length, 0);
 });
 
